@@ -8,6 +8,12 @@ struct Hole: Identifiable, Codable, Equatable {
 }
 
 struct Drawing: Codable {
+    var companyName: String = ""
+    var partName: String = ""
+    var revision: String = ""
+    var quantity: String = ""
+    var machineType: String = "未指定"
+    var notes: String = ""
     var drawingNumber: String = ""
     var material: String = ""
     var thickness: Double = 0
