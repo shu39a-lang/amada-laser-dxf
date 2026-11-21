@@ -5,6 +5,11 @@ enum DXF {
         guard d.verified, d.issues.isEmpty else {
             throw NSError(domain: "AMADA", code: 2, userInfo: [NSLocalizedDescriptionKey: "図面の照合と寸法検証が必要です"])
         }
+        return try preview(d)
+    }
+
+    static func preview(_ d: Drawing) throws -> Data {
+        guard d.issues.isEmpty else { throw NSError(domain:"AMADA", code:3, userInfo:[NSLocalizedDescriptionKey:d.issues.joined(separator:"、")]) }
         // ASCII-only DXF R12, closed outline in CUT_OUTLINE and circles in CUT_HOLES.
         func f(_ n: Double) -> String { String(format: "%.4f", locale: Locale(identifier: "en_US_POSIX"), n) }
         // R12 does not define $INSUNITS (introduced in later DXF versions).

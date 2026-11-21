@@ -1,12 +1,20 @@
 import Foundation
 import Vision
+#if canImport(UIKit)
 import UIKit
+#endif
 import CoreImage
 
 // All processing stays on-device. No API keys, server or network requests.
 enum OfflineVision {
+    #if canImport(UIKit)
     static func analyze(image: UIImage) async throws -> RecognitionResult {
         guard let cgImage = image.cgImage else { throw NSError(domain: "AMADA", code: 1, userInfo: [NSLocalizedDescriptionKey: "JPEGまたはPNG画像を選んでください"]) }
+        return try await analyze(cgImage:cgImage)
+    }
+    #endif
+
+    static func analyze(cgImage: CGImage) async throws -> RecognitionResult {
         return try await Task.detached(priority: .userInitiated) {
             let text = VNRecognizeTextRequest()
             text.recognitionLevel = .accurate
@@ -251,7 +259,7 @@ private enum OrdinateReader {
                 abs(m.along(horizontal)-(a.zero+a.scale*a.extent*0.5)) < a.scale*a.extent*0.32
             }
         }
-        guard corroborated(x,horizontal:true), corroborated(y,horizontal:false) else { return nil }
+        let outlineRepeated = corroborated(x,horizontal:true) && corroborated(y,horizontal:false)
         var draft = Drawing()
         draft.width = x.extent
         draft.height = y.extent
@@ -272,6 +280,7 @@ private enum OrdinateReader {
         let pattern = #"^(?:(\d{1,2})[-‐−×])?([φΦØ⌀M])(\d+(?:\.\d+)?)(?:[xX×](\d+(?:\.\d+)?))?$"#
         guard let re = try? NSRegularExpression(pattern: pattern) else { return draft }
         var groups: [Callout] = []
+        var groupBoxes: [CGRect] = []
         for label in labels {
             let s = clean(label.text)
             guard let match = re.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else { continue }
@@ -281,7 +290,12 @@ private enum OrdinateReader {
             // Only this explicitly supported coarse thread has a cutting-tap pilot suggestion.
             if thread && !(nominal == 3 && Double(field(4) ?? "") == 0.5) { continue }
             let count = Int(field(1) ?? "1") ?? 1
-            if count > 0 { groups.append(Callout(count:count, diameter:thread ? 2.5 : nominal, thread:thread)) }
+            let diameter = thread ? 2.5 : nominal
+            let repeated = groups.indices.contains { groups[$0].count == count && groups[$0].diameter == diameter && groupBoxes[$0].intersects(label.rectangle) }
+            if count > 0 && !repeated {
+                groups.append(Callout(count:count, diameter:diameter, thread:thread))
+                groupBoxes.append(label.rectangle)
+            }
         }
         var registration = CGPoint.zero
         for group in groups.sorted(by: { $0.diameter > $1.diameter }) {
@@ -316,7 +330,7 @@ private enum OrdinateReader {
                 }
             }
             for hole in draft.holes { matched.removeValue(forKey: "\(hole.x),\(hole.y)") }
-            if matched.count == group.count {
+            if !matched.isEmpty && matched.count <= group.count {
                 if offsets.count == group.count && group.count >= 2 {
                     let xx = offsets.map(\.x).sorted(), yy = offsets.map(\.y).sorted()
                     if let xmin = xx.first, let xmax = xx.last, let ymin = yy.first, let ymax = yy.last,
@@ -324,7 +338,13 @@ private enum OrdinateReader {
                         registration = CGPoint(x:(xx[(xx.count-1)/2]+xx[xx.count/2])/2,y:(yy[(yy.count-1)/2]+yy[yy.count/2])/2)
                     }
                 }
-                draft.holes += matched.values.sorted { $0.x < $1.x }
+                let partial = matched.count < group.count || !outlineRepeated
+                draft.holes += matched.values.sorted { ($0.x,$0.y) < ($1.x,$1.y) }.map { hole in
+                    var row = hole
+                    row.positionSuggested = partial
+                    row.diameterSuggested = group.thread
+                    return row
+                }
                 if group.thread { draft.notes = "M3×0.5の下穴は切削タップ用の候補φ2.5。加工方法と指定径を確認してください。" }
             }
         }
