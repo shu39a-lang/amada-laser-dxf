@@ -417,10 +417,12 @@ struct MainView: View {
               drawing.width > 0, drawing.height > 0,
               !acceptedCircleIDs.contains(candidate.id) else { return }
         let cx = Double(candidate.center.x), cy = Double(candidate.center.y)
-        let centerX = (cx - rect.minX) / rect.width * drawing.width
-        let centerY = (cy - rect.minY) / rect.height * drawing.height
-        let diameterX = candidate.radiusX * 2 / rect.width * drawing.width
-        let diameterY = candidate.radiusY * 2 / rect.height * drawing.height
+        let x0 = Double(rect.minX), y0 = Double(rect.minY)
+        let rectWidth = Double(rect.width), rectHeight = Double(rect.height)
+        let centerX = (cx - x0) / rectWidth * drawing.width
+        let centerY = (cy - y0) / rectHeight * drawing.height
+        let diameterX = candidate.radiusX * 2 / rectWidth * drawing.width
+        let diameterY = candidate.radiusY * 2 / rectHeight * drawing.height
         let diameter = (diameterX + diameterY) / 2
         guard diameter.isFinite, centerX.isFinite, centerY.isFinite,
               diameter > 0,
