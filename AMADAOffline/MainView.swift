@@ -124,6 +124,16 @@ struct MainView: View {
                             .resizable().scaledToFit()
                             .frame(width: geo.size.width, height: geo.size.height)
                         if (phase == 1 || phase == 2), let analysis {
+                            if let rect = analysis.rectangle {
+                                Rectangle()
+                                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                                    .frame(width: rect.width * imageWidth,
+                                           height: rect.height * imageHeight)
+                                    .position(
+                                        x: left + rect.midX * imageWidth,
+                                        y: top + (1 - rect.midY) * imageHeight
+                                    )
+                            }
                             ForEach(analysis.circles.indices, id: \.self) { index in
                                 let candidate = analysis.circles[index]
                                 Text("\(index + 1)")
@@ -158,7 +168,7 @@ struct MainView: View {
                 GroupBox("画像解析結果") {
                     VStack(alignment: .leading) {
                         Text(result.diagnostics)
-                        Text(result.rectangle == nil ? "外形候補なし（手動寸法確認が必要）" : "矩形の外形候補あり（未検証）")
+                        Text(result.rectangle == nil ? "外形候補なし（手動寸法確認が必要）" : "青い点線が外形候補です。図面の切断外形と一致するか確認してください。")
                             .foregroundStyle(.orange)
                         Text("読み取った寸法候補は、原図と照合してから「幅へ」「高さへ」で転記できます。")
                             .font(.caption).foregroundStyle(.secondary)
@@ -208,7 +218,7 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 12) {
             GroupBox("原図面（赤番号＝丸穴候補）") {
                 drawingImage
-                Text("下の加工図プレビューと見比べ、原図と寸法・穴位置を照合してください。")
+                Text("青点線＝外形候補、赤番号＝丸穴候補。誤認識がある場合は追加しないでください。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             GroupBox("図面情報（mm）") {
