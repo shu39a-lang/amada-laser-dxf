@@ -41,7 +41,7 @@ struct MainView: View {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("図面レーザーDXF").font(.title2.bold())
+                        Text("SHEET MASTER").font(.title2.bold())
                         Spacer()
                         Text("\(phase + 1) / \(stages.count)").font(.subheadline.monospacedDigit())
                     }
@@ -161,7 +161,7 @@ struct MainView: View {
                         Image(uiImage: photo)
                             .resizable().scaledToFit()
                             .frame(width: geo.size.width, height: geo.size.height)
-                        if (phase == 1 || phase == 2), let analysis {
+                        if phase == 2, let analysis {
                             if let rect = analysis.rectangle {
                                 Rectangle()
                                     .stroke(Color.blue, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
@@ -172,7 +172,7 @@ struct MainView: View {
                                         y: top + (1 - rect.midY) * imageHeight
                                     )
                             }
-                            ForEach(analysis.circles.indices, id: \.self) { index in
+                            ForEach(analysis.circles.indices.filter { acceptedCircleIDs.contains(analysis.circles[$0].id) }, id: \.self) { index in
                                 let candidate = analysis.circles[index]
                                 Text("\(index + 1)")
                                     .font(.caption2.bold())
@@ -206,57 +206,43 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 12) {
             drawingImage
             Button(busy ? "解析中" : "画像解析を実行") { runRecognition() }
-
                 .buttonStyle(WorkshopButtonStyle()).disabled(busy || photo == nil)
-            if busy { ProgressView("iPhone内で解析しています") }
-            if let result = analysis {
-                GroupBox("画像解析結果") {
-                    VStack(alignment: .leading) {
-                        Text(result.diagnostics)
-                        Text(result.rectangle == nil ? "外形候補なし（手動寸法確認が必要）" : "青い点線が外形候補です。図面の切断外形と一致するか確認してください。")
-                            .foregroundStyle(Color(red: 0.46, green: 0.31, blue: 0.02))
-                        Text("読み取った寸法候補は、原図と照合してから「幅へ」「高さへ」で転記できます。")
+            if busy { ProgressView("図面を解析しています") }
+            if analysis != nil {
+                GroupBox("DXFに必要なデータ") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("読み取った文字は候補です。原図との照合なしに寸法を確定しません。")
+                            .font(.subheadline).foregroundStyle(.orange)
+                        HStack {
+                            Text("外形 幅 × 高さ")
+                            Spacer()
+                            Text(drawing.width > 0 && drawing.height > 0 ?
+                                 "\(drawing.width.formatted()) × \(drawing.height.formatted()) mm" : "要確認")
+                        }
+                        Divider()
+                        HStack {
+                            Text("板厚")
+                            Spacer()
+                            Text(drawing.thickness > 0 ? "\(drawing.thickness.formatted()) mm" : "要確認")
+                        }
+                        Divider()
+                        HStack {
+                            Text("四隅のC")
+                            Spacer()
+                            Text("要確認")
+                        }
+                        Divider()
+                        HStack {
+                            Text("穴の中心・直径")
+                            Spacer()
+                            Text(drawing.holes.isEmpty ? "要確認" : "\(drawing.holes.count)件（未照合）")
+                        }
+                        Text("文字数や輪郭の検出件数は加工データではありません。")
                             .font(.caption).foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if !result.circles.isEmpty {
-                    GroupBox("丸穴候補（画像輪郭から検出）") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("検出候補：\(result.circles.count)件。写真の赤い番号に対応します。")
-                                .font(.footnote).foregroundStyle(.orange)
-                            Text("工程3で外形幅・高さを確定した後、必要な候補だけ追加してください。")
-                                .font(.caption)
-                            Text("誤認識を防ぐため、工程3で丸穴候補を1件ずつ選択してください。")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
                     }
                 }
-                GroupBox("読み取った文字（候補）") {
-                    if result.candidates.isEmpty {
-                        Text("文字を認識できませんでした").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(result.candidates) { candidate in
-                            HStack(alignment: .firstTextBaseline) {
-                                Text(candidate.text).textSelection(.enabled)
-                                Spacer()
-                                Text("\(Int(candidate.confidence * 100))%")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }.padding(.vertical, 3)
-                            if let value = recognizedDimension(candidate.text) {
-                                HStack(spacing: 8) {
-                                    Button("幅へ") { applyDimension(value, toWidth: true) }
-
-                .buttonStyle(WorkshopButtonStyle())
-                                    Button("高さへ") { applyDimension(value, toWidth: false) }
-
-                .buttonStyle(WorkshopButtonStyle())
-                                    Text("mm").font(.caption).foregroundStyle(.secondary)
-                                }.font(.caption)
-                            }
-                            Divider()
-                        }
-                    }
-                }
+                Text("「次へ」で外形・穴位置を確認して修正します。")
+                    .font(.subheadline).foregroundStyle(.white)
             }
         }
     }
@@ -268,9 +254,18 @@ struct MainView: View {
                 Text("青点線＝外形候補、赤番号＝丸穴候補。誤認識がある場合は追加しないでください。")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            GroupBox("図面情報（mm）") {
+            GroupBox("DXFに必要な寸法（mm）") {
                 VStack(alignment: .leading, spacing: 9) {
-                    Text("読み取れなかった項目は空欄のままにし、原図面で確認してください。").font(.caption).foregroundStyle(.secondary)
+                    Text("原図面と照合してください。不明な寸法は推測で入力しないでください。")
+                        .font(.caption).foregroundStyle(.orange)
+                    valueRow("外形 幅 X", value: $drawing.width)
+                    valueRow("外形 高さ Y", value: $drawing.height)
+                    valueRow("板厚", value: $drawing.thickness)
+                    valueRow("角 C", value: $drawing.chamfer)
+                }
+            }
+            DisclosureGroup("図面管理情報（任意・DXF形状には含めません）") {
+                VStack(alignment: .leading, spacing: 8) {
                     TextField("会社名・取引先名", text: $drawing.companyName)
                     TextField("品名", text: $drawing.partName)
                     TextField("図番", text: $drawing.drawingNumber)
@@ -283,14 +278,13 @@ struct MainView: View {
                         Text("タレパン").tag("タレパン")
                         Text("その他").tag("その他")
                     }
-                    TextField("備考・読み取りメモ", text: $drawing.notes, axis: .vertical)
-                        .lineLimit(2...4)
-                    valueRow("幅 X", value: $drawing.width)
-                    valueRow("高さ Y", value: $drawing.height)
-                    valueRow("板厚", value: $drawing.thickness)
-                    valueRow("角 C", value: $drawing.chamfer)
-                }
+                    TextField("備考", text: $drawing.notes, axis: .vertical).lineLimit(2...4)
+                }.padding(.top, 8)
             }
+            .padding()
+            .background(.white, in: RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(.black)
+            .environment(\.colorScheme, .light)
             GroupBox("切断形状プレビュー") {
                 DrawingPreview(drawing: drawing)
                     .frame(height: 230).frame(maxWidth: .infinity)
@@ -298,33 +292,28 @@ struct MainView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let analysis, !analysis.circles.isEmpty {
-                GroupBox("画像から検出した丸穴候補") {
+                DisclosureGroup("画像の丸穴候補（参考・誤認識に注意）") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("候補\(analysis.circles.count)件。外形幅・高さを入力した後に追加します。")
-                            .font(.footnote)
-                        if drawing.width <= 0 || drawing.height <= 0 || analysis.rectangle == nil {
-                            Text("外形候補を検出し、幅・高さを確認すると穴を選択できます。")
-                                .font(.caption).foregroundStyle(.orange)
-                        }
+                        Text("輪郭検出は正しい穴とは限りません。原図に存在するものだけ選択してください。")
+                            .font(.caption).foregroundStyle(.orange)
                         ForEach(analysis.circles.indices, id: \.self) { index in
-                                let candidate = analysis.circles[index]
+                            let candidate = analysis.circles[index]
                             HStack {
-                                Text("候補\(index + 1)（画像検出）")
-                                    .font(.subheadline)
+                                Text("画像候補 \(index + 1)")
                                 Spacer()
-                                Button(acceptedCircleIDs.contains(candidate.id) ? "追加済み" : "この穴を追加") {
+                                Button(acceptedCircleIDs.contains(candidate.id) ? "追加済み" : "仮追加") {
                                     addDetectedHole(candidate, rect: analysis.rectangle)
                                 }
-
-                .buttonStyle(WorkshopButtonStyle())
                                 .disabled(acceptedCircleIDs.contains(candidate.id) ||
                                           drawing.width <= 0 || drawing.height <= 0 || analysis.rectangle == nil)
                             }
                         }
-                        Text("画像の線や文字も穴と誤認するため、原図にある穴だけ追加してください。")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
+                    }.padding(.top, 8)
                 }
+                .padding()
+                .background(.white, in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(.black)
+                .environment(\.colorScheme, .light)
             }
             GroupBox("穴の座標と直径") {
                 VStack(alignment: .leading, spacing: 10) {
