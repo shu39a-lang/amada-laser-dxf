@@ -47,7 +47,7 @@ struct MainView: View {
                         if phase == 4 { phase = 0 } else { phase += 1; if phase == 1 && analysis == nil { runRecognition() } }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled((phase == 0 && photo == nil) || (phase == 1 && analysis == nil))
+                    .disabled((phase == 0 && photo == nil) || (phase == 1 && analysis == nil) || (phase == 3 && exportURL == nil))
                 }.padding().background(.regularMaterial)
             }
             .navigationTitle("図面レーザーDXF")
@@ -451,8 +451,11 @@ struct MainView: View {
         do {
             let data = try DXF.generate(drawing)
             let base = drawing.drawingNumber.isEmpty ? "drawing" : drawing.drawingNumber
-            let safeName = base.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(safeName + ".dxf")
+            let cleaned = base.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
+            let safeName = cleaned.trimmingCharacters(in: CharacterSet(charactersIn: "_-"))
+            let prefix = safeName.isEmpty ? "drawing" : String(safeName.prefix(50))
+            let fileName = "\(prefix)_\(UUID().uuidString.prefix(8)).dxf"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
             try data.write(to: url, options: .atomic)
             exportURL = url
             message = "DXFを作成しました。共有ボタンから保存できます。"
