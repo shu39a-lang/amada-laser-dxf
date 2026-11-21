@@ -13,10 +13,7 @@ struct MainView: View {
     @State private var drawing = Drawing()
     @State private var message = "図面を取り込んでください"
     @State private var exportURL: URL?
-    @State private var tapAddsHole = false
     @State private var acceptedCircleIDs: Set<UUID> = []
-    @State private var nominalDiameter = 6.0
-    @State private var transferMethod = 0
 
     private let stages = ["写真を取り込む", "画像解析", "寸法・穴位置確認", "DXF生成", "AMADAへ受け渡し"]
 
@@ -309,11 +306,6 @@ struct MainView: View {
 
     private var transferScreen: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("受け渡し方法", selection: $transferMethod) {
-                Text("ファイル共有").tag(0)
-                Text("メール").tag(1)
-                Text("USB等").tag(2)
-            }.pickerStyle(.segmented)
             if let exportURL {
                 ShareLink(item: exportURL) { Label("DXFファイルを共有する", systemImage: "square.and.arrow.up") }
                     .buttonStyle(.borderedProminent)
