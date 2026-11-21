@@ -114,8 +114,35 @@ struct MainView: View {
     private var drawingImage: some View {
         Group {
             if let photo {
-                Image(uiImage: photo).resizable().scaledToFit().frame(maxHeight: 360)
-                    .frame(maxWidth: .infinity).background(.white).clipShape(RoundedRectangle(cornerRadius: 10))
+                GeometryReader { geo in
+                    let scale = min(geo.size.width / max(photo.size.width, 1),
+                                    geo.size.height / max(photo.size.height, 1))
+                    let imageWidth = photo.size.width * scale
+                    let imageHeight = photo.size.height * scale
+                    let left = (geo.size.width - imageWidth) / 2
+                    let top = (geo.size.height - imageHeight) / 2
+                    ZStack(alignment: .topLeading) {
+                        Color.white
+                        Image(uiImage: photo)
+                            .resizable().scaledToFit()
+                            .frame(width: geo.size.width, height: geo.size.height)
+                        if phase == 1, let analysis {
+                            ForEach(Array(analysis.circles.enumerated()), id: \.element.id) { index, candidate in
+                                Text("\(index + 1)")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .padding(5)
+                                    .background(Circle().fill(.red))
+                                    .position(
+                                        x: left + CGFloat(candidate.center.x) * imageWidth,
+                                        y: top + (1 - CGFloat(candidate.center.y)) * imageHeight
+                                    )
+                            }
+                        }
+                    }
+                }
+                .frame(height: 340)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
                 ContentUnavailableView("図面がありません", systemImage: "doc.viewfinder", description: Text("写真を選択または撮影してください"))
                     .frame(height: 200)
@@ -142,7 +169,7 @@ struct MainView: View {
                 if !result.circles.isEmpty {
                     GroupBox("丸穴候補（画像輪郭から検出）") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("検出候補：\(result.circles.count)件。写真上の円形文字や記号も含まれる場合があります。")
+                            Text("検出候補：\(result.circles.count)件。写真の赤い番号に対応します。")
                                 .font(.footnote).foregroundStyle(.orange)
                             Text("工程3で外形幅・高さを確定した後、必要な候補だけ追加してください。")
                                 .font(.caption)
