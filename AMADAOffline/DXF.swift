@@ -7,7 +7,9 @@ enum DXF {
         }
         // ASCII-only DXF R12, closed outline in CUT_OUTLINE and circles in CUT_HOLES.
         func f(_ n: Double) -> String { String(format: "%.4f", locale: Locale(identifier: "en_US_POSIX"), n) }
-        var tokens = ["0", "SECTION", "2", "HEADER", "9", "$INSUNITS", "70", "4", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES"]
+        // R12 does not define $INSUNITS (introduced in later DXF versions).
+        // Coordinates are authored in millimetres; verify units in receiving CAM.
+        var tokens = ["0", "SECTION", "2", "HEADER", "9", "$LUNITS", "70", "2", "9", "$LUPREC", "70", "4", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES"]
         let w = d.width, h = d.height, c = d.chamfer
         let points: [(Double, Double)] = c > 0 ? [(c,0),(w-c,0),(w,c),(w,h-c),(w-c,h),(c,h),(0,h-c),(0,c)] : [(0,0),(w,0),(w,h),(0,h)]
         for i in points.indices {
