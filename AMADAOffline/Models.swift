@@ -44,20 +44,22 @@ struct Drawing: Codable {
                 }
             }
         }
-        // Circular holes must not reach the diagonal C-cut edges.
+        // A round hole must remain entirely inside all four chamfer half-planes.
+        // Testing only when the hole centre is inside the corner square misses
+        // large holes whose edges intersect a chamfer from farther away.
         if chamfer.isFinite, chamfer > 0, chamfer * 2 < min(width, height) {
-            let corners: [(Double, Double, Double)] = [(0,0,0),(width,0,1),(width,height,2),(0,height,3)]
             for (index, hole) in holes.enumerated() {
-                guard hole.x.isFinite, hole.y.isFinite, hole.diameter.isFinite, hole.diameter > 0 else { continue }
-                let r = hole.diameter/2
-                for (_, _, corner) in corners {
-                    let dx: Double = corner == 0 || corner == 3 ? hole.x : width - hole.x
-                    let dy: Double = corner == 0 || corner == 1 ? hole.y : height - hole.y
-                    if dx >= 0 && dy >= 0 && dx < chamfer && dy < chamfer &&
-                       (dx + dy - chamfer)/sqrt(2) < r {
-                        errors.append("穴\(index + 1)が角Cの加工線と干渉します")
-                        break
-                    }
+                guard hole.x.isFinite, hole.y.isFinite,
+                      hole.diameter.isFinite, hole.diameter > 0 else { continue }
+                let r = hole.diameter / 2
+                let cornerClearances = [
+                    (hole.x + hole.y - chamfer) / sqrt(2),
+                    (width - hole.x + hole.y - chamfer) / sqrt(2),
+                    (width - hole.x + height - hole.y - chamfer) / sqrt(2),
+                    (hole.x + height - hole.y - chamfer) / sqrt(2)
+                ]
+                if cornerClearances.contains(where: { $0 < r - 0.000001 }) {
+                    errors.append("穴\(index + 1)が角Cの加工線と干渉します")
                 }
             }
         }
