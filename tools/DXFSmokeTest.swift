@@ -48,6 +48,23 @@ struct DXFSmokeTest {
         noChamfer.chamfer = 0
         let normalDXF = String(data: try DXF.generate(noChamfer), encoding: .utf8)!
         precondition(normalDXF.components(separatedBy: "\r\n").filter { $0 == "LINE" }.count == 4, "rectangle edge count")
+        var invalidWidth = drawing
+        invalidWidth.width = -1
+        precondition(!invalidWidth.issues.isEmpty, "negative width accepted")
+        precondition((try? DXF.generate(invalidWidth)) == nil, "negative width exported")
+        var invalidThickness = drawing
+        invalidThickness.thickness = .nan
+        precondition(!invalidThickness.issues.isEmpty, "NaN thickness accepted")
+        var invalidChamfer = drawing
+        invalidChamfer.chamfer = 25
+        precondition(!invalidChamfer.issues.isEmpty, "degenerate chamfer accepted")
+        var diameterOverflow = drawing
+        diameterOverflow.holes = [Hole(x: 50, y: 25, diameter: 200)]
+        precondition(!diameterOverflow.issues.isEmpty, "oversized hole accepted")
+        var touchingHoles = drawing
+        touchingHoles.holes = [Hole(x: 25, y: 20, diameter: 8), Hole(x: 33, y: 20, diameter: 8)]
+        precondition(!touchingHoles.issues.contains(where: { $0.contains("重なっています") }),
+                     "tangent holes should not be treated as overlapping")
         print("DXF and geometry validation tests passed")
     }
 }
