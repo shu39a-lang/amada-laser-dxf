@@ -14,6 +14,7 @@ enum OfflineVision {
             text.recognitionLanguages = ["ja-JP", "en-US"]
             let rectangles = VNDetectRectanglesRequest()
             rectangles.maximumObservations = 32
+            rectangles.minimumSize = 0.025
             rectangles.minimumConfidence = 0.55
             rectangles.minimumAspectRatio = 0.035
             rectangles.maximumAspectRatio = 1.0
@@ -56,18 +57,26 @@ enum OfflineVision {
             }
             // Rotated, overlapping crops retain tiny ordinate labels on phone photos.
             let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
+            let tileContext = CIContext(options: [.cacheIntermediates:false])
             for x in [0.0,0.44] {
                 for y in [0.0,0.44] {
                     let crop = CGRect(x:x*width,y:y*height,width:0.56*width,height:0.56*height).integral
                         .intersection(CGRect(x:0,y:0,width:width,height:height))
                     guard let tile = cgImage.cropping(to:crop) else { continue }
+                    let magnification = min(3.0, 1500.0/Double(max(tile.width,tile.height)))
+                    var ocrTile = tile
+                    if magnification > 1.1 {
+                        let enlarged = CIImage(cgImage:tile).applyingFilter("CILanczosScaleTransform",
+                            parameters:[kCIInputScaleKey:magnification,kCIInputAspectRatioKey:1.0])
+                        ocrTile = tileContext.createCGImage(enlarged,from:enlarged.extent) ?? tile
+                    }
                     for rotated in [false,true] {
                         let request = VNRecognizeTextRequest()
                         request.recognitionLevel = .accurate
                         request.usesLanguageCorrection = false
                         request.recognitionLanguages = ["en-US","ja-JP"]
                         request.minimumTextHeight = 0.003
-                        try? VNImageRequestHandler(cgImage:tile,orientation:rotated ? .right : .up,options:[:]).perform([request])
+                        try? VNImageRequestHandler(cgImage:ocrTile,orientation:rotated ? .right : .up,options:[:]).perform([request])
                         for observation in request.results ?? [] {
                             guard let token = observation.topCandidates(1).first else { continue }
                             let b = observation.boundingBox
@@ -204,7 +213,19 @@ private enum OrdinateReader {
         guard let best = ranked.first, ranked.filter({ $0.marks.count == best.marks.count }).allSatisfy({
             $0.extent == best.extent && abs($0.zero-best.zero) < 0.01
         }) else { return nil }
-        return best
+        // A jogged leader can move a printed ordinate away from the centreline.
+        guard let origin = best.marks.first(where: { $0.value == 0 }) else { return best }
+        let span = best.extent*best.scale
+        let band = horizontal ? origin.box.height : origin.box.width
+        var recovered = best.marks
+        for mark in marks where mark.value > 0 && mark.value < best.extent {
+            guard !recovered.contains(where: { $0.value == mark.value }),
+                  abs(mark.across(horizontal)-origin.across(horizontal)) < min(0.045,max(0.014,band*1.7)),
+                  abs(mark.along(horizontal)-best.zero-mark.value*best.scale) < span*0.16,
+                  best.marks.allSatisfy({ ($0.value-mark.value)*($0.along(horizontal)-mark.along(horizontal)) > 0 }) else { continue }
+            recovered.append(mark)
+        }
+        return Axis(marks:recovered,zero:best.zero,scale:best.scale,extent:best.extent)
     }
 
     struct Callout {
@@ -262,11 +283,13 @@ private enum OrdinateReader {
             let count = Int(field(1) ?? "1") ?? 1
             if count > 0 { groups.append(Callout(count:count, diameter:thread ? 2.5 : nominal, thread:thread)) }
         }
+        var registration = CGPoint.zero
         for group in groups.sorted(by: { $0.diameter > $1.diameter }) {
             var matched: [String:Hole] = [:]
+            var offsets: [CGPoint] = []
             for circle in circles {
                 guard circle.center.x > x.zero, circle.center.x < right, circle.center.y > y.zero, circle.center.y < top,
-                      let mx = x.nearest(circle.center.x), let my = y.nearest(circle.center.y) else { continue }
+                      let mx = x.nearest(circle.center.x-registration.x), let my = y.nearest(circle.center.y-registration.y) else { continue }
                 let size = (circle.radiusX/x.scale + circle.radiusY/y.scale)
                 let possible = groups.filter { abs(size-$0.diameter) < $0.diameter*0.30 }
                 guard possible.count == 1, possible[0].diameter == group.diameter else { continue }
@@ -274,17 +297,19 @@ private enum OrdinateReader {
             }
             // Crosshairs can split the circumference into four separate contours.
             // Check the actual image for a dark annulus at a printed coordinate pair.
-            if let raster, matched.count < group.count, x.marks.count*y.marks.count < 500 {
+            if let raster, x.marks.count*y.marks.count < 500 {
                 for mx in x.marks where mx.value > 0 && mx.value < x.extent {
                     for my in y.marks where my.value > 0 && my.value < y.extent {
                         let key = "\(mx.value),\(my.value)"
-                        if matched[key] != nil { continue }
+
                         let predicted = CGPoint(x:x.zero+mx.value*x.scale,y:y.zero+my.value*y.scale)
                         let otherX = x.marks.filter { $0.value != mx.value }.map { abs($0.value-mx.value) }.min() ?? x.extent
                         let otherY = y.marks.filter { $0.value != my.value }.map { abs($0.value-my.value) }.min() ?? y.extent
-                        if raster.hasRing(at:predicted, radius:group.diameter*x.scale*Double(raster.width)/2,
+                        let registered = CGPoint(x:predicted.x+registration.x,y:predicted.y+registration.y)
+                        if let center = raster.ringCenter(at:registered, radius:group.diameter*x.scale*Double(raster.width)/2,
                                           dx:min(otherX*0.47,x.extent*0.035)*x.scale*Double(raster.width),
                                           dy:min(otherY*0.47,y.extent*0.06)*y.scale*Double(raster.height)) {
+                            offsets.append(CGPoint(x:center.x-predicted.x,y:center.y-predicted.y))
                             matched[key] = Hole(x:mx.value,y:my.value,diameter:group.diameter)
                         }
                     }
@@ -292,6 +317,13 @@ private enum OrdinateReader {
             }
             for hole in draft.holes { matched.removeValue(forKey: "\(hole.x),\(hole.y)") }
             if matched.count == group.count {
+                if offsets.count == group.count && group.count >= 2 {
+                    let xx = offsets.map(\.x).sorted(), yy = offsets.map(\.y).sorted()
+                    if let xmin = xx.first, let xmax = xx.last, let ymin = yy.first, let ymax = yy.last,
+                       xmax-xmin < x.scale*x.extent*0.04 && ymax-ymin < y.scale*y.extent*0.07 {
+                        registration = CGPoint(x:(xx[(xx.count-1)/2]+xx[xx.count/2])/2,y:(yy[(yy.count-1)/2]+yy[yy.count/2])/2)
+                    }
+                }
                 draft.holes += matched.values.sorted { $0.x < $1.x }
                 if group.thread { draft.notes = "M3×0.5の下穴は切削タップ用の候補φ2.5。加工方法と指定径を確認してください。" }
             }
@@ -326,8 +358,10 @@ private struct RingImage {
         gray = pixels
     }
 
-    func hasRing(at point: CGPoint, radius: Double, dx: Double, dy: Double) -> Bool {
-        guard radius >= 2, radius <= 80 else { return false }
+    func ringCenter(at point: CGPoint, radius: Double, dx: Double, dy: Double) -> CGPoint? {
+        var bestScore = 0
+        var best: CGPoint?
+        guard radius >= 2, radius <= 80 else { return nil }
         let cx = Int(point.x*Double(width)), cy = Int((1-point.y)*Double(height))
         let sx = min(32,Int(dx)), sy = min(24,Int(dy))
         for y in stride(from:cy-sy,through:cy+sy,by:max(1,Int(radius*0.16))) {
@@ -336,19 +370,24 @@ private struct RingImage {
                     let r = radius*factor
                     let margin = Int(ceil(r*1.65))+1
                     guard x >= margin, y >= margin, x+margin < width, y+margin < height else { continue }
-                    var votes = 0
+                    var votes = 0, strength = 0
                     for d in Self.directions {
                         func sample(_ distance: Double) -> Int {
                             let px = x+Int((d.x*distance).rounded()), py = y+Int((d.y*distance).rounded())
                             return Int(gray[py*width+px])
                         }
                         let edge = min(sample(r*0.92),sample(r*1.08))
-                        if min(sample(r*0.48),sample(r*1.60))-edge >= 18 { votes += 1 }
+                        let contrast = min(sample(r*0.48),sample(r*1.60))-edge
+                        if contrast >= 18 { votes += 1; strength += min(contrast,100) }
                     }
-                    if votes >= 12 { return true }
+                    let score = votes*100+strength
+                    if votes >= 12 && score > bestScore {
+                        bestScore = score
+                        best = CGPoint(x:Double(x)/Double(width),y:1-Double(y)/Double(height))
+                    }
                 }
             }
         }
-        return false
+        return best
     }
 }
