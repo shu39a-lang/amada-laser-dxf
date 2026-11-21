@@ -1,0 +1,34 @@
+workflows:
+  ios-testflight:
+    name: AMADA DXF - iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.shu39a.amadaoffline
+      vars:
+        XCODE_PROJECT: "AMADAOffline.xcodeproj"
+        XCODE_SCHEME: "AMADAOffline"
+      xcode: latest
+    scripts:
+      - name: Apply Apple signing profiles
+        script: xcode-project use-profiles
+      - name: Set unique build version
+        script: |
+          cd "$CM_BUILD_DIR"
+          xcrun agvtool new-version -all "$BUILD_NUMBER"
+      - name: Build IPA
+        script: |
+          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false
