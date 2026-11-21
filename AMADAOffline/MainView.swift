@@ -14,7 +14,7 @@ struct MainView: View {
     @State private var message = "図面を取り込んでください"
     @State private var exportURL: URL?
     @State private var tapAddsHole = false
-    @State private var circleCandidatesAccepted = false
+    @State private var acceptedCircleIDs: Set<UUID> = []
     @State private var nominalDiameter = 6.0
     @State private var transferMethod = 0
 
@@ -146,13 +146,8 @@ struct MainView: View {
                                 .font(.footnote).foregroundStyle(.orange)
                             Text("工程3で外形幅・高さを確定した後、必要な候補だけ追加してください。")
                                 .font(.caption)
-                            Button("丸穴候補を寸法確認に追加") { addDetectedHoles(result) }
-                                .buttonStyle(.bordered)
-                                .disabled(drawing.width <= 0 || drawing.height <= 0 || result.rectangle == nil || circleCandidatesAccepted)
-                            if drawing.width <= 0 || drawing.height <= 0 {
-                                Text("先に工程3で外形寸法を入力してください。")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                            Text("誤認識を防ぐため、工程3で丸穴候補を1件ずつ選択してください。")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -207,12 +202,25 @@ struct MainView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("候補\(analysis.circles.count)件。外形幅・高さを入力した後に追加します。")
                             .font(.footnote)
-                        Button("候補を加工図へ反映") { addDetectedHoles(analysis) }
-                            .disabled(drawing.width <= 0 || drawing.height <= 0 || analysis.rectangle == nil || circleCandidatesAccepted)
-                        if circleCandidatesAccepted {
-                            Text("追加済みです。各穴を原図と照合し、不要な穴を削除してください。")
-                                .foregroundStyle(.orange).font(.caption)
+                        if drawing.width <= 0 || drawing.height <= 0 || analysis.rectangle == nil {
+                            Text("外形候補を検出し、幅・高さを確認すると穴を選択できます。")
+                                .font(.caption).foregroundStyle(.orange)
                         }
+                        ForEach(Array(analysis.circles.enumerated()), id: \.element.id) { index, candidate in
+                            HStack {
+                                Text("候補\(index + 1)（画像検出）")
+                                    .font(.subheadline)
+                                Spacer()
+                                Button(acceptedCircleIDs.contains(candidate.id) ? "追加済み" : "この穴を追加") {
+                                    addDetectedHole(candidate, rect: analysis.rectangle)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(acceptedCircleIDs.contains(candidate.id) ||
+                                          drawing.width <= 0 || drawing.height <= 0 || analysis.rectangle == nil)
+                            }
+                        }
+                        Text("画像の線や文字も穴と誤認するため、原図にある穴だけ追加してください。")
+                            .font(.caption).foregroundStyle(.orange)
                     }
                 }
             }
@@ -318,7 +326,7 @@ struct MainView: View {
         photo = normalized
         selected = nil
         analysis = nil
-        circleCandidatesAccepted = false
+        acceptedCircleIDs.removeAll()
         drawing = Drawing()
         exportURL = nil
         message = "写真を取り込みました。端末内で画像解析を開始します。"
@@ -375,28 +383,32 @@ struct MainView: View {
         message = "\(toWidth ? "幅" : "高さ")に\(value.formatted())mmを仮入力しました。必ず原図で確認してください。"
     }
 
-    // Convert candidate coordinates only relative to the detected outer rectangle.
-    // Do not assume the detection is correct or that mm dimensions can be read from pixels.
-    private func addDetectedHoles(_ result: RecognitionResult) {
-        guard let rect = result.rectangle, rect.width > 0, rect.height > 0,
-              drawing.width > 0, drawing.height > 0, !circleCandidatesAccepted else { return }
-        var added = 0
-        for candidate in result.circles {
-            let cx = Double(candidate.center.x), cy = Double(candidate.center.y)
-            let centerX = (cx - rect.minX) / rect.width * drawing.width
-            let centerY = (cy - rect.minY) / rect.height * drawing.height
-            let diameterX = candidate.radiusX * 2 / rect.width * drawing.width
-            let diameterY = candidate.radiusY * 2 / rect.height * drawing.height
-            let diameter = (diameterX + diameterY)/2
-            guard diameter > 0, centerX-diameter/2 >= 0, centerY-diameter/2 >= 0,
-                  centerX+diameter/2 <= drawing.width, centerY+diameter/2 <= drawing.height else { continue }
-            drawing.holes.append(Hole(x: centerX, y: centerY, diameter: diameter))
-            added += 1
+    // Convert a single user-selected candidate relative to the detected outline.
+    // A contour is never accepted automatically, because dimension lines and text
+    // can look circular. Every accepted hole must still be checked against the drawing.
+    private func addDetectedHole(_ candidate: CircleCandidate, rect: CGRect?) {
+        guard let rect, rect.width > 0, rect.height > 0,
+              drawing.width > 0, drawing.height > 0,
+              !acceptedCircleIDs.contains(candidate.id) else { return }
+        let cx = Double(candidate.center.x), cy = Double(candidate.center.y)
+        let centerX = (cx - rect.minX) / rect.width * drawing.width
+        let centerY = (cy - rect.minY) / rect.height * drawing.height
+        let diameterX = candidate.radiusX * 2 / rect.width * drawing.width
+        let diameterY = candidate.radiusY * 2 / rect.height * drawing.height
+        let diameter = (diameterX + diameterY) / 2
+        guard diameter.isFinite, centerX.isFinite, centerY.isFinite,
+              diameter > 0,
+              centerX - diameter/2 >= 0, centerY - diameter/2 >= 0,
+              centerX + diameter/2 <= drawing.width,
+              centerY + diameter/2 <= drawing.height else {
+            message = "穴候補が外形範囲外です。原図の寸法と位置を確認してください。"
+            return
         }
-        circleCandidatesAccepted = true
+        drawing.holes.append(Hole(x: centerX, y: centerY, diameter: diameter))
+        acceptedCircleIDs.insert(candidate.id)
         drawing.verified = false
         exportURL = nil
-        message = "丸穴候補\(added)件を仮追加しました。穴径と座標を原図と照合してください。"
+        message = "丸穴候補を1件仮追加しました。穴径と座標を原図と照合してください。"
     }
 
     private func createDXF() {
