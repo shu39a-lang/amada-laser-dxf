@@ -17,6 +17,7 @@ struct MainView: View {
     @State private var outlineChecked = false
     @State private var holeCountChecked = false
     @State private var checkedHoleIDs: Set<UUID> = []
+    @State private var suggestedMeasurements: [OCRCandidate] = []
 
     private var safeToExport: Bool {
         drawing.verified && outlineChecked && holeCountChecked &&
@@ -132,6 +133,7 @@ struct MainView: View {
                     busy = false
                     photo = nil
                     analysis = nil
+                    suggestedMeasurements = []
                     drawing = Drawing()
                     exportURL = nil
                     selected = nil
@@ -239,6 +241,22 @@ struct MainView: View {
                         }
                         Text("文字数や輪郭の検出件数は加工データではありません。")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if !suggestedMeasurements.isEmpty {
+                    GroupBox("寸法の文字候補（原図照合後に転記）") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(suggestedMeasurements) { candidate in
+                                if let number = recognizedDimension(candidate.text) {
+                                    HStack {
+                                        Text("\(candidate.text) mm")
+                                        Spacer()
+                                        Button("幅へ") { applyDimension(number, toWidth: true) }
+                                        Button("高さへ") { applyDimension(number, toWidth: false) }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 Text("「次へ」で外形・穴位置を確認して修正します。")
@@ -450,6 +468,7 @@ struct MainView: View {
         photo = normalized
         selected = nil
         analysis = nil
+        suggestedMeasurements = []
         acceptedCircleIDs.removeAll()
         drawing = Drawing()
         invalidateReview()
@@ -470,6 +489,9 @@ struct MainView: View {
                 await MainActor.run {
                     guard recognitionID == requestID else { return }
                     analysis = result
+                    suggestedMeasurements = result.candidates.filter {
+                        recognizedDimension($0.text) != nil && $0.confidence >= 0.4
+                    }.prefix(16).map { $0 }
                     busy = false
                     message = "\(result.diagnostics)。工程3で数値を照合してください。"
                 }
