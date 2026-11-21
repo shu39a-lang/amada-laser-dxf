@@ -425,6 +425,16 @@ struct MainView: View {
             message = "穴候補が外形範囲外です。原図の寸法と位置を確認してください。"
             return
         }
+        let duplicate = drawing.holes.contains { existing in
+            let centreDistance = hypot(existing.x - centerX, existing.y - centerY)
+            return centreDistance < max(0.5, diameter * 0.15) &&
+                   abs(existing.diameter - diameter) < max(0.5, diameter * 0.15)
+        }
+        guard !duplicate else {
+            acceptedCircleIDs.insert(candidate.id)
+            message = "同じ位置・径の穴が既に登録されているため、重複追加を防ぎました。"
+            return
+        }
         drawing.holes.append(Hole(x: centerX, y: centerY, diameter: diameter))
         acceptedCircleIDs.insert(candidate.id)
         drawing.verified = false
