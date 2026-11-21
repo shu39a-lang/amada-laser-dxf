@@ -300,13 +300,13 @@ struct MainView: View {
                 }.padding(.top, 8)
             }
             .padding()
-            .background(.white, in: RoundedRectangle(cornerRadius: 10))
-            .foregroundStyle(.black)
-            .environment(\.colorScheme, .light)
+            .background(Color(red: 0.13, green: 0.13, blue: 0.13), in: RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(.white)
+            .environment(\.colorScheme, .dark)
             GroupBox("切断形状プレビュー") {
                 DrawingPreview(drawing: drawing)
                     .frame(height: 230).frame(maxWidth: .infinity)
-                Text("原点：左下。青＝外形、赤＝穴。寸法を変えるとプレビューに反映します。")
+                Text("原点：左下。白＝外形、赤＝穴。寸法を変えるとプレビューに反映します。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if let analysis, !analysis.circles.isEmpty {
@@ -329,9 +329,9 @@ struct MainView: View {
                     }.padding(.top, 8)
                 }
                 .padding()
-                .background(.white, in: RoundedRectangle(cornerRadius: 10))
-                .foregroundStyle(.black)
-                .environment(\.colorScheme, .light)
+                .background(Color(red: 0.13, green: 0.13, blue: 0.13), in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(.white)
+                .environment(\.colorScheme, .dark)
             }
             GroupBox("穴の座標と直径") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -610,15 +610,15 @@ struct DrawingPreview: View {
                 if let first=outline.first { path.move(to: pt(first.0,first.1)) }
                 for p in outline.dropFirst() { path.addLine(to: pt(p.0,p.1)) }
                 path.closeSubpath()
-                ctx.stroke(path, with: .color(.blue), lineWidth: 2)
+                ctx.stroke(path, with: .color(.white), lineWidth: 2)
                 for hole in drawing.holes where hole.diameter>0 && hole.diameter.isFinite && hole.x.isFinite && hole.y.isFinite {
                     let center=pt(hole.x,hole.y),r=CGFloat(hole.diameter)*scale/2
                     ctx.stroke(Path(ellipseIn: CGRect(x:center.x-r,y:center.y-r,width:2*r,height:2*r)),with:.color(.red),lineWidth:2)
                     var mark=Path();mark.move(to:CGPoint(x:center.x-4,y:center.y));mark.addLine(to:CGPoint(x:center.x+4,y:center.y));mark.move(to:CGPoint(x:center.x,y:center.y-4));mark.addLine(to:CGPoint(x:center.x,y:center.y+4));ctx.stroke(mark,with:.color(.red),lineWidth:1)
                 }
             }
-            .background(Color.white).clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(alignment: .bottom) { Text("左下原点　外形：青／穴：赤").font(.caption2).foregroundStyle(.black).padding(4) }
+            .background(Color(red: 0.13, green: 0.13, blue: 0.13)).clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(alignment: .bottom) { Text("左下原点　外形：白／穴：赤").font(.caption2).foregroundStyle(.white).padding(4) }
         }
     }
 }
@@ -646,9 +646,9 @@ private struct DrawingGroupStyle: GroupBoxStyle {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 10))
-        .foregroundStyle(.black)
-        .environment(\.colorScheme, .light)
+        .background(Color(red: 0.13, green: 0.13, blue: 0.13), in: RoundedRectangle(cornerRadius: 10))
+        .foregroundStyle(.white)
+        .environment(\.colorScheme, .dark)
         .tint(.black)
     }
 }
