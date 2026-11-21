@@ -17,7 +17,10 @@ jobs:
         run: |
           plutil -lint AMADAOffline.xcodeproj/project.pbxproj
           plutil -lint AMADAOffline/Info.plist AMADAOffline/PrivacyInfo.xcprivacy
-          sips -g pixelWidth -g pixelHeight AMADAOffline/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+          icon=AMADAOffline/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
+          test -s "$icon"
+          sips -g pixelWidth "$icon" | grep -q 'pixelWidth: 1024'
+          sips -g pixelHeight "$icon" | grep -q 'pixelHeight: 1024'
           xcodebuild -list -project AMADAOffline.xcodeproj
       - name: Test DXF output and export safeguards
         run: |
