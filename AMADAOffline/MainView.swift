@@ -471,10 +471,15 @@ struct DrawingPreview: View {
                 guard drawing.width > 0, drawing.height > 0,
                       drawing.width.isFinite, drawing.height.isFinite else { return }
                 let margin: CGFloat = 19
-                let scale = min((size.width - 2 * margin)/drawing.width, (size.height - 2 * margin)/drawing.height)
-                let left = (size.width - drawing.width * scale)/2
-                let bottom = (size.height + drawing.height * scale)/2
-                func pt(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: left + x*scale, y: bottom - y*scale) }
+                let width = CGFloat(drawing.width)
+                let height = CGFloat(drawing.height)
+                let scale = min(max(0, size.width - 2 * margin) / width,
+                                max(0, size.height - 2 * margin) / height)
+                let left = (size.width - width * scale) / 2
+                let bottom = (size.height + height * scale) / 2
+                func pt(_ x: Double, _ y: Double) -> CGPoint {
+                    CGPoint(x: left + CGFloat(x) * scale, y: bottom - CGFloat(y) * scale)
+                }
                 let w=drawing.width,h=drawing.height,c=max(0,min(drawing.chamfer,min(w,h)/2))
                 let outline: [(Double,Double)] = c>0 ? [(c,0),(w-c,0),(w,c),(w,h-c),(w-c,h),(c,h),(0,h-c),(0,c)] : [(0,0),(w,0),(w,h),(0,h)]
                 var path=Path()
@@ -483,7 +488,7 @@ struct DrawingPreview: View {
                 path.closeSubpath()
                 ctx.stroke(path, with: .color(.blue), lineWidth: 2)
                 for hole in drawing.holes where hole.diameter>0 && hole.diameter.isFinite && hole.x.isFinite && hole.y.isFinite {
-                    let center=pt(hole.x,hole.y),r=hole.diameter*scale/2
+                    let center=pt(hole.x,hole.y),r=CGFloat(hole.diameter)*scale/2
                     ctx.stroke(Path(ellipseIn: CGRect(x:center.x-r,y:center.y-r,width:2*r,height:2*r)),with:.color(.red),lineWidth:2)
                     var mark=Path();mark.move(to:CGPoint(x:center.x-4,y:center.y));mark.addLine(to:CGPoint(x:center.x+4,y:center.y));mark.move(to:CGPoint(x:center.x,y:center.y-4));mark.addLine(to:CGPoint(x:center.x,y:center.y+4));ctx.stroke(mark,with:.color(.red),lineWidth:1)
                 }
