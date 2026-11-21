@@ -229,7 +229,7 @@ struct MainView: View {
                         HStack {
                             Text("四隅のC")
                             Spacer()
-                            Text("要確認")
+                            Text(drawing.chamfer > 0 ? "\(drawing.chamfer.formatted()) mm（要照合）" : "0または未入力（要確認）")
                         }
                         Divider()
                         HStack {
