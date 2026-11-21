@@ -8,6 +8,7 @@ struct MainView: View {
     @State private var photo: UIImage?
     @State private var cameraShown = false
     @State private var busy = false
+    @State private var recognitionID = UUID()
     @State private var analysis: RecognitionResult?
     @State private var drawing = Drawing()
     @State private var message = "図面を取り込んでください"
@@ -89,6 +90,8 @@ struct MainView: View {
             }
             if photo != nil {
                 Button("別の図面を選ぶために現在の図面を消去", role: .destructive) {
+                    recognitionID = UUID()
+                    busy = false
                     photo = nil
                     analysis = nil
                     drawing = Drawing()
@@ -132,7 +135,7 @@ struct MainView: View {
                         Text(result.diagnostics)
                         Text(result.rectangle == nil ? "外形候補なし（手動寸法確認が必要）" : "矩形の外形候補あり（未検証）")
                             .foregroundStyle(.orange)
-                        Text("数値の自動割当はしません。OCRの文字を元図面と照合して入力してください。")
+                        Text("読み取った寸法候補は、原図と照合してから「幅へ」「高さへ」で転記できます。")
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -164,6 +167,16 @@ struct MainView: View {
                                 Text("\(Int(candidate.confidence * 100))%")
                                     .font(.caption).foregroundStyle(.secondary)
                             }.padding(.vertical, 3)
+                            if let value = recognizedDimension(candidate.text) {
+                                HStack(spacing: 8) {
+                                    Button("幅へ") { applyDimension(value, toWidth: true) }
+                                        .buttonStyle(.bordered)
+                                    Button("高さへ") { applyDimension(value, toWidth: false) }
+                                        .buttonStyle(.bordered)
+                                    Text("mm").font(.caption).foregroundStyle(.secondary)
+                                }.font(.caption)
+                            }
+                            Divider()
                         }
                     }
                 }
@@ -300,6 +313,8 @@ struct MainView: View {
         format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let normalized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        recognitionID = UUID()
+        busy = false
         photo = normalized
         selected = nil
         analysis = nil
@@ -314,18 +329,50 @@ struct MainView: View {
     private func runRecognition() {
         guard let photo, !busy else { return }
         busy = true
+        let requestID = UUID()
+        recognitionID = requestID
         message = "OCR解析中…"
         Task {
             do {
                 let result = try await OfflineVision.analyze(image: photo)
                 await MainActor.run {
-                    analysis = result; busy = false
+                    guard recognitionID == requestID else { return }
+                    analysis = result
+                    busy = false
                     message = "\(result.diagnostics)。工程3で数値を照合してください。"
                 }
             } catch {
-                await MainActor.run { busy = false; message = "解析失敗：\(error.localizedDescription)" }
+                await MainActor.run {
+                    guard recognitionID == requestID else { return }
+                    busy = false
+                    message = "解析失敗：\(error.localizedDescription)"
+                }
             }
         }
+    }
+
+    // Restrict OCR transfer to standalone numbers, never tolerance or diameter symbols.
+    private func recognizedDimension(_ text: String) -> Double? {
+        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "ｍｍ", with: "mm")
+            .replacingOccurrences(of: "．", with: ".")
+        guard normalized.range(of: #"^\d{1,5}(?:\.\d{1,3})?\s*(?:mm)?$"#,
+                               options: .regularExpression) != nil else { return nil }
+        let number = normalized.replacingOccurrences(of: "mm", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard let value = Double(number), value > 0, value <= 100000 else { return nil }
+        return value
+    }
+
+    private func applyDimension(_ value: Double, toWidth: Bool) {
+        if toWidth {
+            drawing.width = value
+        } else {
+            drawing.height = value
+        }
+        drawing.verified = false
+        exportURL = nil
+        message = "\(toWidth ? "幅" : "高さ")に\(value.formatted())mmを仮入力しました。必ず原図で確認してください。"
     }
 
     // Convert candidate coordinates only relative to the detected outer rectangle.
