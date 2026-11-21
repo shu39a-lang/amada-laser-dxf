@@ -1,28 +1,17 @@
 import Foundation
 
-// Independent test fixture: compile the shipping DXF.swift without SwiftUI.
-struct Hole {
-    var x: Double
-    var y: Double
-    var diameter: Double
-}
-
-struct Drawing {
-    var verified: Bool
-    var width: Double
-    var height: Double
-    var chamfer: Double
-    var holes: [Hole]
-    var issues: [String] = []
-}
-
+// Compile the actual production Models.swift and DXF.swift with these tests.
 @main
 struct DXFSmokeTest {
     static func main() throws {
-        let drawing = Drawing(
-            verified: true, width: 100, height: 50, chamfer: 5,
-            holes: [Hole(x: 25, y: 20, diameter: 8)]
-        )
+        var drawing = Drawing()
+        drawing.verified = true
+        drawing.width = 100
+        drawing.height = 50
+        drawing.chamfer = 5
+        drawing.thickness = 2
+        drawing.holes = [Hole(x: 25, y: 20, diameter: 8)]
+        precondition(drawing.issues.isEmpty, "valid geometry rejected")
         let data = try DXF.generate(drawing)
         guard let text = String(data: data, encoding: .utf8) else {
             fatalError("DXF output is not UTF-8")
@@ -46,8 +35,19 @@ struct DXFSmokeTest {
         invalid.verified = false
         precondition((try? DXF.generate(invalid)) == nil, "unverified cuts must not export")
         invalid.verified = true
-        invalid.issues = ["invalid hole"]
+        invalid.holes = [Hole(x: 1, y: 1, diameter: 8)]
+        precondition(!invalid.issues.isEmpty, "out-of-bounds hole accepted")
         precondition((try? DXF.generate(invalid)) == nil, "invalid geometry must not export")
-        print("DXF smoke test passed")
+        var overlap = drawing
+        overlap.holes.append(Hole(x: 28, y: 20, diameter: 8))
+        precondition(overlap.issues.contains(where: { $0.contains("重なっています") }), "overlap accepted")
+        var chamferCollision = drawing
+        chamferCollision.holes = [Hole(x: 8, y: 8, diameter: 10)]
+        precondition(chamferCollision.issues.contains(where: { $0.contains("角C") }), "chamfer collision accepted")
+        var noChamfer = drawing
+        noChamfer.chamfer = 0
+        let normalDXF = String(data: try DXF.generate(noChamfer), encoding: .utf8)!
+        precondition(normalDXF.components(separatedBy: "\\r\\n").filter { $0 == "LINE" }.count == 4, "rectangle edge count")
+        print("DXF and geometry validation tests passed")
     }
 }
