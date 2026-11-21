@@ -14,6 +14,24 @@ struct MainView: View {
     @State private var message = "図面を取り込んでください"
     @State private var exportURL: URL?
     @State private var acceptedCircleIDs: Set<UUID> = []
+    @State private var outlineChecked = false
+    @State private var holeCountChecked = false
+    @State private var checkedHoleIDs: Set<UUID> = []
+
+    private var safeToExport: Bool {
+        drawing.verified && outlineChecked && holeCountChecked &&
+        checkedHoleIDs.count == drawing.holes.count &&
+        drawing.holes.allSatisfy { checkedHoleIDs.contains($0.id) } &&
+        drawing.issues.isEmpty
+    }
+
+    private func invalidateReview() {
+        drawing.verified = false
+        exportURL = nil
+        outlineChecked = false
+        holeCountChecked = false
+        checkedHoleIDs.removeAll()
+    }
 
     private let panelRed = Color(red: 143 / 255, green: 23 / 255, blue: 29 / 255)
     private let stages = ["図面を取り込む", "画像解析", "寸法・穴位置確認", "DXF生成", "AMADAへ受け渡し"]
@@ -77,10 +95,7 @@ struct MainView: View {
                 CameraView { image in loadPhoto(image) }
                     .ignoresSafeArea()
             }
-            .onChange(of: drawing.holes) { _, _ in
-                drawing.verified = false
-                exportURL = nil
-            }
+            .onChange(of: drawing.holes) { _, _ in invalidateReview() }
             .onChange(of: selected) { _, item in
                 guard let item else { return }
                 Task {
@@ -326,6 +341,15 @@ struct MainView: View {
                             valueRow("中心 X", value: $hole.x)
                             valueRow("中心 Y", value: $hole.y)
                             valueRow("直径 Φ", value: $hole.diameter)
+                            Toggle("原図と照合済み：この穴のX・Y・直径", isOn: Binding(
+                                get: { checkedHoleIDs.contains(hole.id) },
+                                set: { checked in
+                                    if checked { checkedHoleIDs.insert(hole.id) }
+                                    else { checkedHoleIDs.remove(hole.id) }
+                                    drawing.verified = false
+                                    exportURL = nil
+                                }
+                            ))
                         }.padding(8).background(Color.secondary.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     Button { drawing.holes.append(Hole(x: drawing.width/2, y: drawing.height/2, diameter: 5)); drawing.verified = false } label: {
@@ -338,8 +362,22 @@ struct MainView: View {
                     ForEach(drawing.issues, id: \.self) { Text("・" + $0).foregroundStyle(.red) }
                 }
             }
-            Toggle("原図と寸法・穴位置を照合しました", isOn: $drawing.verified)
-                .disabled(!drawing.issues.isEmpty)
+            GroupBox("出力前の独立照合（未完了はDXF生成不可）") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("原図と外形・板厚・角C・原点を照合済み", isOn: $outlineChecked)
+                    Toggle("原図と穴の総数（\(drawing.holes.count)件）を照合済み", isOn: $holeCountChecked)
+                    Text("各穴のX・Y・直径照合：\(checkedHoleIDs.count) / \(drawing.holes.count)件")
+                    Toggle("原図との照合結果を承認する", isOn: $drawing.verified)
+                        .disabled(!outlineChecked || !holeCountChecked ||
+                            checkedHoleIDs.count != drawing.holes.count ||
+                            !drawing.holes.allSatisfy { checkedHoleIDs.contains($0.id) } ||
+                            !drawing.issues.isEmpty)
+                    if !safeToExport {
+                        Label("未確認項目があります。DXF生成を停止しています。", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
             Text("画像だけから穴位置の確定はできません。加工前に必ず原図面と照合してください。")
                 .font(.footnote).foregroundStyle(.orange)
         }
@@ -359,19 +397,21 @@ struct MainView: View {
                 if !drawing.notes.isEmpty { Text("備考：\(drawing.notes)") }
             }.font(.subheadline)
             Text("外形 \(drawing.width.formatted()) × \(drawing.height.formatted()) mm ／ 穴 \(drawing.holes.count)か所")
-            if !drawing.verified || !drawing.issues.isEmpty {
+            if !safeToExport {
                 Label("寸法・穴位置の照合が未完了です。工程3で確認してください。", systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
             }
             Button("DXFファイルを生成") { createDXF() }
 
                 .buttonStyle(WorkshopButtonStyle())
-                .disabled(!drawing.verified || !drawing.issues.isEmpty)
+                .disabled(!safeToExport)
             if let exportURL {
                 ShareLink(item: exportURL) { Label("DXFをファイルに保存・共有", systemImage: "square.and.arrow.up") }
 
                 .buttonStyle(WorkshopButtonStyle())
             }
+            Text("このDXFは試験用です。製造前にCAM上で原図寸法・穴位置を再照合し、加工経路をシミュレーションして責任者の承認を得てください。")
+                .font(.footnote).foregroundStyle(.red)
             Text("DXF R12形式。加工機用NCコードではありません。会社のCAD/CAMで取込・寸法照合・加工経路シミュレーションが必要です。")
                 .font(.footnote).foregroundStyle(.secondary)
         }
@@ -401,7 +441,7 @@ struct MainView: View {
             Text(label).frame(width: 94, alignment: .leading)
             TextField("0", value: value, format: .number)
                 .keyboardType(.decimalPad).textFieldStyle(.roundedBorder)
-                .onChange(of: value.wrappedValue) { _, _ in drawing.verified = false; exportURL = nil }
+                .onChange(of: value.wrappedValue) { _, _ in invalidateReview() }
         }
     }
 
@@ -423,7 +463,7 @@ struct MainView: View {
         analysis = nil
         acceptedCircleIDs.removeAll()
         drawing = Drawing()
-        exportURL = nil
+        invalidateReview()
         message = "写真を取り込みました。端末内で画像解析を開始します。"
         phase = 1
         runRecognition()
@@ -473,8 +513,7 @@ struct MainView: View {
         } else {
             drawing.height = value
         }
-        drawing.verified = false
-        exportURL = nil
+        invalidateReview()
         message = "\(toWidth ? "幅" : "高さ")に\(value.formatted())mmを仮入力しました。必ず原図で確認してください。"
     }
 
@@ -513,13 +552,16 @@ struct MainView: View {
         }
         drawing.holes.append(Hole(x: centerX, y: centerY, diameter: diameter))
         acceptedCircleIDs.insert(candidate.id)
-        drawing.verified = false
-        exportURL = nil
+        invalidateReview()
         message = "丸穴候補を1件仮追加しました。穴径と座標を原図と照合してください。"
     }
 
     private func createDXF() {
         do {
+            guard safeToExport else {
+                message = "原図との照合が未完了のためDXF生成を停止しました。"
+                return
+            }
             let data = try DXF.generate(drawing)
             let base = drawing.drawingNumber.isEmpty ? "drawing" : drawing.drawingNumber
             let cleaned = base.replacingOccurrences(of: "[^a-zA-Z0-9_-]", with: "_", options: .regularExpression)
