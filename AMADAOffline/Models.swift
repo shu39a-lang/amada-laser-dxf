@@ -1,4 +1,3 @@
-import SwiftUI
 import Foundation
 
 struct Hole: Identifiable, Codable, Equatable {
