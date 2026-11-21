@@ -277,6 +277,13 @@ struct MainView: View {
                                         Spacer()
                                         Button("幅へ") { applyDimension(number, toWidth: true) }
                                         Button("高さへ") { applyDimension(number, toWidth: false) }
+                                        if number <= 50 {
+                                            Button("板厚へ") {
+                                                drawing.thickness = number
+                                                invalidateReview()
+                                                message = "板厚候補\(number.formatted())mmを仮入力しました。原図と照合してください。"
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -515,6 +522,20 @@ struct MainView: View {
                     guard recognitionID == requestID else { return }
                     analysis = result
                     identifiedFields = recognizeDrawingFields(result.candidates)
+                    // Only explicit, unambiguous labels may prefill the review form.
+                    // The verification flag is never set automatically.
+                    if drawing.thickness == 0,
+                       let field = identifiedFields.first(where: { $0.key == "thickness" }),
+                       let value = Double(field.value) {
+                        drawing.thickness = value
+                        invalidateReview()
+                    }
+                    if drawing.chamfer == 0,
+                       let field = identifiedFields.first(where: { $0.key == "chamfer" }),
+                       let value = Double(field.value) {
+                        drawing.chamfer = value
+                        invalidateReview()
+                    }
                     let explicit = Set(identifiedFields.map { $0.sourceID })
                     suggestedMeasurements = result.candidates.filter {
                         recognizedDimension($0.text) != nil && $0.confidence >= 0.5 &&
