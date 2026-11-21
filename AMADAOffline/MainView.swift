@@ -127,7 +127,8 @@ struct MainView: View {
                             .resizable().scaledToFit()
                             .frame(width: geo.size.width, height: geo.size.height)
                         if phase == 1, let analysis {
-                            ForEach(Array(analysis.circles.enumerated()), id: \.element.id) { index, candidate in
+                            ForEach(analysis.circles.indices, id: \.self) { index in
+                                let candidate = analysis.circles[index]
                                 Text("\(index + 1)")
                                     .font(.caption2.bold())
                                     .foregroundStyle(.white)
@@ -233,7 +234,8 @@ struct MainView: View {
                             Text("外形候補を検出し、幅・高さを確認すると穴を選択できます。")
                                 .font(.caption).foregroundStyle(.orange)
                         }
-                        ForEach(Array(analysis.circles.enumerated()), id: \.element.id) { index, candidate in
+                        ForEach(analysis.circles.indices, id: \.self) { index in
+                                let candidate = analysis.circles[index]
                             HStack {
                                 Text("候補\(index + 1)（画像検出）")
                                     .font(.subheadline)
