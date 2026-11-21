@@ -123,7 +123,7 @@ struct MainView: View {
                         Image(uiImage: photo)
                             .resizable().scaledToFit()
                             .frame(width: geo.size.width, height: geo.size.height)
-                        if phase == 1, let analysis {
+                        if (phase == 1 || phase == 2), let analysis {
                             ForEach(analysis.circles.indices, id: \.self) { index in
                                 let candidate = analysis.circles[index]
                                 Text("\(index + 1)")
@@ -206,6 +206,11 @@ struct MainView: View {
 
     private var geometryScreen: some View {
         VStack(alignment: .leading, spacing: 12) {
+            GroupBox("原図面（赤番号＝丸穴候補）") {
+                drawingImage
+                Text("下の加工図プレビューと見比べ、原図と寸法・穴位置を照合してください。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             GroupBox("図面情報（mm）") {
                 VStack {
                     TextField("図番", text: $drawing.drawingNumber)
