@@ -18,6 +18,7 @@ struct MainView: View {
     @State private var holeCountChecked = false
     @State private var checkedHoleIDs: Set<UUID> = []
     @State private var suggestedMeasurements: [OCRCandidate] = []
+    @State private var identifiedFields: [DetectedDrawingField] = []
 
     private var safeToExport: Bool {
         drawing.verified && outlineChecked && holeCountChecked &&
@@ -134,6 +135,7 @@ struct MainView: View {
                     photo = nil
                     analysis = nil
                     suggestedMeasurements = []
+                    identifiedFields = []
                     drawing = Drawing()
                     exportURL = nil
                     selected = nil
@@ -241,6 +243,28 @@ struct MainView: View {
                         }
                         Text("文字数や輪郭の検出件数は加工データではありません。")
                             .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if !identifiedFields.isEmpty {
+                    GroupBox("図面の表記から識別した項目（未確定）") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(identifiedFields) { field in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text("\(field.label)　\(field.value)")
+                                            .font(.headline)
+                                        Text("根拠：\(field.source)")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Button("反映") { applyRecognizedField(field) }
+                                        .buttonStyle(WorkshopButtonStyle())
+                                }
+                                Divider()
+                            }
+                            Text("文字認識の一致だけでは加工精度は保証されません。必ず原図面との照合を行ってください。")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
                     }
                 }
                 if !suggestedMeasurements.isEmpty {
@@ -469,6 +493,7 @@ struct MainView: View {
         selected = nil
         analysis = nil
         suggestedMeasurements = []
+        identifiedFields = []
         acceptedCircleIDs.removeAll()
         drawing = Drawing()
         invalidateReview()
@@ -489,9 +514,12 @@ struct MainView: View {
                 await MainActor.run {
                     guard recognitionID == requestID else { return }
                     analysis = result
+                    identifiedFields = recognizeDrawingFields(result.candidates)
+                    let explicit = Set(identifiedFields.map { $0.sourceID })
                     suggestedMeasurements = result.candidates.filter {
-                        recognizedDimension($0.text) != nil && $0.confidence >= 0.4
-                    }.prefix(16).map { $0 }
+                        recognizedDimension($0.text) != nil && $0.confidence >= 0.5 &&
+                        !explicit.contains($0.id)
+                    }.prefix(10).map { $0 }
                     busy = false
                     message = "\(result.diagnostics)。工程3で数値を照合してください。"
                 }
@@ -503,6 +531,77 @@ struct MainView: View {
                 }
             }
         }
+    }
+
+    // Recognize explicit drafting labels, never guess hole coordinates from OCR ordering.
+    private func recognizeDrawingFields(_ lines: [OCRCandidate]) -> [DetectedDrawingField] {
+        var found: [DetectedDrawingField] = []
+        let pattern = #"(?i)(?:板厚|THICKNESS|THK|(?:^|\s)t)\s*[:：=]?\s*(\d{1,2}(?:[.．]\d{1,2})?)\s*(?:mm)?\s*$"#
+        let chamferPattern = #"(?i)^(?:4\s*[-x×]\s*)?C\s*(\d{1,2}(?:[.．]\d{1,2})?)$"#
+        let materialPattern = #"(?i)^(?:SPHC|SPCC|SS400|SUS304|SUS430|SECC|SGCC|A5052|A6061)$"#
+        let drawingNumberPattern = #"^\d{3,6}[-‐ー]\d{1,4}[-‐ー]\d{1,4}[-‐ー]\d{1,4}$"#
+        let sorted = lines.sorted { $0.confidence > $1.confidence }
+        for line in sorted where line.confidence >= 0.55 {
+            let value = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let thickness = capturedNumber(value, pattern: pattern), thickness > 0, thickness <= 50 {
+                found.append(DetectedDrawingField(key: "thickness", label: "板厚", value: "\(thickness)", source: value, sourceID: line.id))
+            }
+            if let chamfer = capturedNumber(value, pattern: chamferPattern), chamfer > 0, chamfer <= 50 {
+                found.append(DetectedDrawingField(key: "chamfer", label: "角C", value: "\(chamfer)", source: value, sourceID: line.id))
+            }
+            if value.range(of: materialPattern, options: .regularExpression) != nil {
+                found.append(DetectedDrawingField(key: "material", label: "材質", value: value.uppercased(), source: value, sourceID: line.id))
+            }
+            if value.range(of: drawingNumberPattern, options: .regularExpression) != nil {
+                found.append(DetectedDrawingField(key: "number", label: "図番", value: value, source: value, sourceID: line.id))
+            }
+        }
+        // If the OCR split the label and numeric value into separate observations,
+        // use only immediately adjacent items on the same baseline.
+        let thicknessLabels = lines.filter {
+            $0.text.range(of: #"(?i)^(?:板厚|THICKNESS|THK|t)$"#,
+                          options: .regularExpression) != nil && $0.confidence >= 0.6
+        }
+        for label in thicknessLabels {
+            let neighbors = lines.filter { item in
+                guard item.id != label.id, item.confidence >= 0.6,
+                      let v = recognizedDimension(item.text), v > 0, v <= 50 else { return false }
+                return abs(item.rectangle.midY - label.rectangle.midY) < 0.025 &&
+                    item.rectangle.minX >= label.rectangle.maxX &&
+                    item.rectangle.minX - label.rectangle.maxX < 0.13
+            }
+            if neighbors.count == 1, let item = neighbors.first,
+               let thickness = recognizedDimension(item.text) {
+                found.append(DetectedDrawingField(key: "thickness", label: "板厚",
+                    value: "\(thickness)", source: "\(label.text) \(item.text)", sourceID: item.id))
+            }
+        }
+        let grouped = Dictionary(grouping: found, by: { $0.key })
+        // Conflicting readings are omitted rather than choosing the first.
+        return grouped.keys.sorted().compactMap { key in
+            guard let choices = grouped[key], let first = choices.first,
+                  choices.allSatisfy({ $0.value == first.value }) else { return nil }
+            return first
+        }
+    }
+
+    private func capturedNumber(_ text: String, pattern: String) -> Double? {
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else { return nil }
+        return Double(text[range].replacingOccurrences(of: "．", with: "."))
+    }
+
+    private func applyRecognizedField(_ field: DetectedDrawingField) {
+        switch field.key {
+        case "thickness": if let n = Double(field.value) { drawing.thickness = n }
+        case "chamfer": if let n = Double(field.value) { drawing.chamfer = n }
+        case "material": drawing.material = field.value
+        case "number": drawing.drawingNumber = field.value
+        default: return
+        }
+        invalidateReview()
+        message = "「\(field.label)」に読み取り候補を反映しました。原図面で照合してください。"
     }
 
     // Restrict OCR transfer to standalone numbers, never tolerance or diameter symbols.
@@ -651,4 +750,13 @@ private struct DrawingGroupStyle: GroupBoxStyle {
         .environment(\.colorScheme, .dark)
         .tint(.yellow)
     }
+}
+
+private struct DetectedDrawingField: Identifiable {
+    let id = UUID()
+    let key: String
+    let label: String
+    let value: String
+    let source: String
+    let sourceID: UUID
 }
