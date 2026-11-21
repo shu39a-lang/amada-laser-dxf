@@ -649,6 +649,6 @@ private struct DrawingGroupStyle: GroupBoxStyle {
         .background(Color(red: 0.13, green: 0.13, blue: 0.13), in: RoundedRectangle(cornerRadius: 10))
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
-        .tint(.black)
+        .tint(.yellow)
     }
 }
