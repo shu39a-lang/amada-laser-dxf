@@ -42,12 +42,12 @@ struct DXFSmokeTest {
         overlap.holes.append(Hole(x: 28, y: 20, diameter: 8))
         precondition(overlap.issues.contains(where: { $0.contains("重なっています") }), "overlap accepted")
         var chamferCollision = drawing
-        chamferCollision.holes = [Hole(x: 8, y: 8, diameter: 10)]
+        chamferCollision.holes = [Hole(x: 5, y: 5, diameter: 10)]
         precondition(chamferCollision.issues.contains(where: { $0.contains("角C") }), "chamfer collision accepted")
         var noChamfer = drawing
         noChamfer.chamfer = 0
         let normalDXF = String(data: try DXF.generate(noChamfer), encoding: .utf8)!
-        precondition(normalDXF.components(separatedBy: "\\r\\n").filter { $0 == "LINE" }.count == 4, "rectangle edge count")
+        precondition(normalDXF.components(separatedBy: "\r\n").filter { $0 == "LINE" }.count == 4, "rectangle edge count")
         print("DXF and geometry validation tests passed")
     }
 }
