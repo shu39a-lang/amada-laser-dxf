@@ -15,7 +15,7 @@ struct MainView: View {
     @State private var exportURL: URL?
     @State private var acceptedCircleIDs: Set<UUID> = []
 
-    private let panelRed = Color(red: 0.74, green: 0.13, blue: 0.15)
+    private let panelRed = Color(red: 143 / 255, green: 23 / 255, blue: 29 / 255)
     private let stages = ["図面を取り込む", "画像解析", "寸法・穴位置確認", "DXF生成", "AMADAへ受け渡し"]
 
     var body: some View {
@@ -23,33 +23,36 @@ struct MainView: View {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("図面レーザーDXF").font(.headline.bold())
+                        Text("図面レーザーDXF").font(.title2.bold())
                         Spacer()
                         Text("\(phase + 1) / \(stages.count)").font(.subheadline.monospacedDigit())
                     }
                     HStack(spacing: 4) {
                         ForEach(stages.indices, id: \.self) { i in
-                            Rectangle().fill(i <= phase ? panelRed : Color.white.opacity(0.24))
+                            Rectangle().fill(i <= phase ? Color.white : Color.clear)
+                                .overlay(Rectangle().strokeBorder(.white, lineWidth: 1))
                                 .frame(height: 5)
                         }
                     }.accessibilityHidden(true)
                 }
                 .padding().foregroundStyle(.white)
-                .background(Color(white: 0.12))
+                .background(panelRed)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 15) {
-                        Text(stages[phase]).font(.title.bold())
+                        Text(stages[phase]).font(.largeTitle.bold()).foregroundStyle(.white)
                         switch phase {
-                        case 0: photoScreen
+                        case 0: photoScreen.foregroundStyle(.white)
                         case 1: analysisScreen
                         case 2: geometryScreen
                         case 3: exportScreen
                         default: transferScreen
                         }
-                        if photo != nil || message != "図面を取り込んでください" { Text(message).font(.footnote).foregroundStyle(.secondary) }
-                        Text("本アプリはAMADA社の公式製品ではありません。DXF出力前には必ず図面と照合してください。")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }.padding()
+                        if photo != nil || message != "図面を取り込んでください" { Text(message).font(.footnote).foregroundStyle(.white) }
+                        if phase == 4 {
+                            Text("本アプリはAMADA社の公式製品ではありません。")
+                                .font(.caption2).foregroundStyle(.white)
+                        }
+                    }.frame(maxWidth: 680, alignment: .leading).padding().frame(maxWidth: .infinity)
                 }
                 if phase > 0 || photo != nil {
                 HStack {
@@ -58,15 +61,18 @@ struct MainView: View {
                     Button(phase == 0 ? "図面を解析する" : phase == 4 ? "最初へ" : "次へ") {
                         if phase == 4 { phase = 0 } else { phase += 1; if phase == 1 && analysis == nil { runRecognition() } }
                     }
-                    .buttonStyle(.borderedProminent)
+
+                .buttonStyle(WorkshopButtonStyle())
                     .disabled((phase == 0 && photo == nil) || (phase == 1 && analysis == nil) || (phase == 3 && exportURL == nil))
-                }.padding().background(.regularMaterial)
+                }.padding().background(panelRed)
                 }
             }
-            .background(Color(white: 0.97))
+            .background(panelRed.ignoresSafeArea())
+            .buttonStyle(WorkshopButtonStyle())
+            .groupBoxStyle(DrawingGroupStyle())
             .toolbar(.hidden, for: .navigationBar)
-            .tint(panelRed)
-            .preferredColorScheme(.light)
+            .tint(.white)
+            .preferredColorScheme(.dark)
             .sheet(isPresented: $cameraShown) {
                 CameraView { image in loadPhoto(image) }
                     .ignoresSafeArea()
@@ -94,15 +100,17 @@ struct MainView: View {
             drawingImage
             Button { cameraShown = true } label: {
                 Label("図面を撮影する", systemImage: "camera.fill")
-                    .font(.headline).frame(maxWidth: .infinity, minHeight: 38)
+                    .font(.headline).frame(maxWidth: .infinity, minHeight: 54)
             }
-            .buttonStyle(.borderedProminent)
+
+                .buttonStyle(WorkshopButtonStyle())
             .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
             PhotosPicker(selection: $selected, matching: .images) {
                 Label("写真から選ぶ", systemImage: "photo.on.rectangle")
-                    .font(.headline).frame(maxWidth: .infinity, minHeight: 38)
+                    .font(.headline).frame(maxWidth: .infinity, minHeight: 54)
             }
-            .buttonStyle(.bordered)
+
+                .buttonStyle(WorkshopButtonStyle())
             if photo != nil {
                 Button("別の図面を選ぶために現在の図面を消去", role: .destructive) {
                     recognitionID = UUID()
@@ -117,8 +125,8 @@ struct MainView: View {
                 }
                 .font(.footnote)
             }
-            Text("写真は端末内のみで処理します。外部サーバーには送信しません。")
-                .font(.footnote).foregroundStyle(.secondary)
+            Text("写真は端末内で処理します。")
+                .font(.footnote).foregroundStyle(.white).frame(maxWidth: .infinity)
 
         }
     }
@@ -168,14 +176,13 @@ struct MainView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
                 VStack(spacing: 12) {
-                    Image(systemName: "doc.viewfinder").font(.system(size: 44, weight: .light))
+                    Image(systemName: "doc.viewfinder").font(.system(size: 56, weight: .regular))
                     Text("図面全体が入るように撮影してください").font(.subheadline)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 210)
-                .background(.white)
                 .overlay(RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.gray.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [6, 4])))
+                    .strokeBorder(Color.white, style: StrokeStyle(lineWidth: 2, dash: [6, 4])))
             }
         }
     }
@@ -184,7 +191,8 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 12) {
             drawingImage
             Button(busy ? "解析中" : "画像解析を実行") { runRecognition() }
-                .buttonStyle(.borderedProminent).disabled(busy || photo == nil)
+
+                .buttonStyle(WorkshopButtonStyle()).disabled(busy || photo == nil)
             if busy { ProgressView("iPhone内で解析しています") }
             if let result = analysis {
                 GroupBox("画像解析結果") {
@@ -222,9 +230,11 @@ struct MainView: View {
                             if let value = recognizedDimension(candidate.text) {
                                 HStack(spacing: 8) {
                                     Button("幅へ") { applyDimension(value, toWidth: true) }
-                                        .buttonStyle(.bordered)
+
+                .buttonStyle(WorkshopButtonStyle())
                                     Button("高さへ") { applyDimension(value, toWidth: false) }
-                                        .buttonStyle(.bordered)
+
+                .buttonStyle(WorkshopButtonStyle())
                                     Text("mm").font(.caption).foregroundStyle(.secondary)
                                 }.font(.caption)
                             }
@@ -277,7 +287,8 @@ struct MainView: View {
                                 Button(acceptedCircleIDs.contains(candidate.id) ? "追加済み" : "この穴を追加") {
                                     addDetectedHole(candidate, rect: analysis.rectangle)
                                 }
-                                .buttonStyle(.bordered)
+
+                .buttonStyle(WorkshopButtonStyle())
                                 .disabled(acceptedCircleIDs.contains(candidate.id) ||
                                           drawing.width <= 0 || drawing.height <= 0 || analysis.rectangle == nil)
                             }
@@ -306,7 +317,7 @@ struct MainView: View {
                     }
                     Button { drawing.holes.append(Hole(x: drawing.width/2, y: drawing.height/2, diameter: 5)); drawing.verified = false } label: {
                         Label("穴を追加", systemImage: "plus.circle")
-                    }.buttonStyle(.bordered)
+                    }.buttonStyle(WorkshopButtonStyle())
                 }
             }
             if !drawing.issues.isEmpty {
@@ -330,11 +341,13 @@ struct MainView: View {
                     .foregroundStyle(.orange)
             }
             Button("DXFファイルを生成") { createDXF() }
-                .buttonStyle(.borderedProminent)
+
+                .buttonStyle(WorkshopButtonStyle())
                 .disabled(!drawing.verified || !drawing.issues.isEmpty)
             if let exportURL {
                 ShareLink(item: exportURL) { Label("DXFをファイルに保存・共有", systemImage: "square.and.arrow.up") }
-                    .buttonStyle(.bordered)
+
+                .buttonStyle(WorkshopButtonStyle())
             }
             Text("DXF R12形式。加工機用NCコードではありません。会社のCAD/CAMで取込・寸法照合・加工経路シミュレーションが必要です。")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -345,7 +358,8 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 12) {
             if let exportURL {
                 ShareLink(item: exportURL) { Label("DXFファイルを共有する", systemImage: "square.and.arrow.up") }
-                    .buttonStyle(.borderedProminent)
+
+                .buttonStyle(WorkshopButtonStyle())
             } else { Text("工程4でDXFを生成してください").foregroundStyle(.orange) }
             GroupBox("会社のPC／AMADA CAMで行う作業") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -530,5 +544,35 @@ struct DrawingPreview: View {
             .background(Color.white).clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(alignment: .bottom) { Text("左下原点　外形：青／穴：赤").font(.caption2).foregroundStyle(.black).padding(4) }
         }
+    }
+}
+
+private struct WorkshopButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .foregroundStyle(.black)
+            .background(Color(red: 1, green: 0.81, blue: 0.18),
+                        in: RoundedRectangle(cornerRadius: 9))
+            .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.48)
+    }
+}
+
+private struct DrawingGroupStyle: GroupBoxStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            configuration.label.font(.headline)
+            configuration.content
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 10))
+        .foregroundStyle(.black)
+        .environment(\.colorScheme, .light)
+        .tint(.black)
     }
 }
