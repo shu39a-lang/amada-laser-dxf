@@ -15,19 +15,30 @@ struct MainView: View {
     @State private var exportURL: URL?
     @State private var acceptedCircleIDs: Set<UUID> = []
 
-    private let stages = ["写真を取り込む", "画像解析", "寸法・穴位置確認", "DXF生成", "AMADAへ受け渡し"]
+    private let panelRed = Color(red: 0.74, green: 0.13, blue: 0.15)
+    private let stages = ["図面を取り込む", "画像解析", "寸法・穴位置確認", "DXF生成", "AMADAへ受け渡し"]
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    ForEach(0..<5, id: \.self) { i in
-                        RoundedRectangle(cornerRadius: 3).fill(i <= phase ? Color.blue : Color.gray.opacity(0.22)).frame(height: 5)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("図面レーザーDXF").font(.headline.bold())
+                        Spacer()
+                        Text("\(phase + 1) / \(stages.count)").font(.subheadline.monospacedDigit())
                     }
-                }.padding(.horizontal).padding(.top, 7)
+                    HStack(spacing: 4) {
+                        ForEach(stages.indices, id: \.self) { i in
+                            Rectangle().fill(i <= phase ? panelRed : Color.white.opacity(0.24))
+                                .frame(height: 5)
+                        }
+                    }.accessibilityHidden(true)
+                }
+                .padding().foregroundStyle(.white)
+                .background(Color(white: 0.12))
                 ScrollView {
                     VStack(alignment: .leading, spacing: 15) {
-                        Text("\(phase + 1) / 5　\(stages[phase])").font(.title3.bold())
+                        Text(stages[phase]).font(.title.bold())
                         switch phase {
                         case 0: photoScreen
                         case 1: analysisScreen
@@ -35,23 +46,27 @@ struct MainView: View {
                         case 3: exportScreen
                         default: transferScreen
                         }
-                        Text(message).font(.footnote).foregroundStyle(.secondary)
+                        if photo != nil || message != "図面を取り込んでください" { Text(message).font(.footnote).foregroundStyle(.secondary) }
                         Text("本アプリはAMADA社の公式製品ではありません。DXF出力前には必ず図面と照合してください。")
                             .font(.caption2).foregroundStyle(.secondary)
                     }.padding()
                 }
+                if phase > 0 || photo != nil {
                 HStack {
                     Button("戻る") { phase = max(0, phase - 1) }.disabled(phase == 0)
                     Spacer()
-                    Button(phase == 4 ? "最初へ" : "次へ") {
+                    Button(phase == 0 ? "図面を解析する" : phase == 4 ? "最初へ" : "次へ") {
                         if phase == 4 { phase = 0 } else { phase += 1; if phase == 1 && analysis == nil { runRecognition() } }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled((phase == 0 && photo == nil) || (phase == 1 && analysis == nil) || (phase == 3 && exportURL == nil))
                 }.padding().background(.regularMaterial)
+                }
             }
-            .navigationTitle("図面レーザーDXF")
-            .navigationBarTitleDisplayMode(.inline)
+            .background(Color(white: 0.97))
+            .toolbar(.hidden, for: .navigationBar)
+            .tint(panelRed)
+            .preferredColorScheme(.light)
             .sheet(isPresented: $cameraShown) {
                 CameraView { image in loadPhoto(image) }
                     .ignoresSafeArea()
@@ -77,14 +92,17 @@ struct MainView: View {
     private var photoScreen: some View {
         VStack(alignment: .leading, spacing: 14) {
             drawingImage
-            HStack {
-                PhotosPicker(selection: $selected, matching: .images) {
-                    Label("写真から選ぶ", systemImage: "photo")
-                }.buttonStyle(.borderedProminent)
-                Button { cameraShown = true } label: { Label("撮影", systemImage: "camera") }
-                    .buttonStyle(.bordered)
-                    .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+            Button { cameraShown = true } label: {
+                Label("図面を撮影する", systemImage: "camera.fill")
+                    .font(.headline).frame(maxWidth: .infinity, minHeight: 38)
             }
+            .buttonStyle(.borderedProminent)
+            .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+            PhotosPicker(selection: $selected, matching: .images) {
+                Label("写真から選ぶ", systemImage: "photo.on.rectangle")
+                    .font(.headline).frame(maxWidth: .infinity, minHeight: 38)
+            }
+            .buttonStyle(.bordered)
             if photo != nil {
                 Button("別の図面を選ぶために現在の図面を消去", role: .destructive) {
                     recognitionID = UUID()
@@ -101,10 +119,7 @@ struct MainView: View {
             }
             Text("写真は端末内のみで処理します。外部サーバーには送信しません。")
                 .font(.footnote).foregroundStyle(.secondary)
-            if photo != nil {
-                Button("図面を画像解析") { phase = 1; runRecognition() }
-                    .buttonStyle(.borderedProminent)
-            }
+
         }
     }
 
@@ -152,8 +167,15 @@ struct MainView: View {
                 .frame(height: 340)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
-                ContentUnavailableView("図面がありません", systemImage: "doc.viewfinder", description: Text("写真を選択または撮影してください"))
-                    .frame(height: 200)
+                VStack(spacing: 12) {
+                    Image(systemName: "doc.viewfinder").font(.system(size: 44, weight: .light))
+                    Text("図面全体が入るように撮影してください").font(.subheadline)
+                }
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 210)
+                .background(.white)
+                .overlay(RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.gray.opacity(0.48), style: StrokeStyle(lineWidth: 1, dash: [6, 4])))
             }
         }
     }
@@ -169,7 +191,7 @@ struct MainView: View {
                     VStack(alignment: .leading) {
                         Text(result.diagnostics)
                         Text(result.rectangle == nil ? "外形候補なし（手動寸法確認が必要）" : "青い点線が外形候補です。図面の切断外形と一致するか確認してください。")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color(red: 0.46, green: 0.31, blue: 0.02))
                         Text("読み取った寸法候補は、原図と照合してから「幅へ」「高さへ」で転記できます。")
                             .font(.caption).foregroundStyle(.secondary)
                     }.frame(maxWidth: .infinity, alignment: .leading)
