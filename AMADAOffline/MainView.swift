@@ -46,7 +46,7 @@ struct MainView: View {
                     Button("戻る") { phase = max(0, phase - 1) }.disabled(phase == 0)
                     Spacer()
                     Button(phase == 4 ? "最初へ" : "次へ") {
-                        if phase == 4 { phase = 0 } else { phase += 1 }
+                        if phase == 4 { phase = 0 } else { phase += 1; if phase == 1 && analysis == nil { runRecognition() } }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled((phase == 0 && photo == nil) || (phase == 1 && analysis == nil))
@@ -306,7 +306,9 @@ struct MainView: View {
         circleCandidatesAccepted = false
         drawing = Drawing()
         exportURL = nil
-        message = "写真を取り込みました。工程2で画像解析を実行します。"
+        message = "写真を取り込みました。端末内で画像解析を開始します。"
+        phase = 1
+        runRecognition()
     }
 
     private func runRecognition() {
