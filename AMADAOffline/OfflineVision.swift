@@ -13,11 +13,12 @@ enum OfflineVision {
             text.usesLanguageCorrection = false
             text.recognitionLanguages = ["ja-JP", "en-US"]
             let rectangles = VNDetectRectanglesRequest()
-            rectangles.maximumObservations = 8
+            rectangles.maximumObservations = 32
             rectangles.minimumConfidence = 0.55
-            rectangles.minimumAspectRatio = 0.1
+            rectangles.minimumAspectRatio = 0.035
             rectangles.maximumAspectRatio = 1.0
             let contours = VNDetectContoursRequest()
+            contours.maximumImageDimension = 2048
             contours.contrastAdjustment = 1.0
             contours.detectsDarkOnLight = true
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
@@ -53,12 +54,41 @@ enum OfflineVision {
                     }
                 }
             }
+            // Rotated, overlapping crops retain tiny ordinate labels on phone photos.
+            let width = CGFloat(cgImage.width), height = CGFloat(cgImage.height)
+            for x in [0.0,0.44] {
+                for y in [0.0,0.44] {
+                    let crop = CGRect(x:x*width,y:y*height,width:0.56*width,height:0.56*height).integral
+                        .intersection(CGRect(x:0,y:0,width:width,height:height))
+                    guard let tile = cgImage.cropping(to:crop) else { continue }
+                    for rotated in [false,true] {
+                        let request = VNRecognizeTextRequest()
+                        request.recognitionLevel = .accurate
+                        request.usesLanguageCorrection = false
+                        request.recognitionLanguages = ["en-US","ja-JP"]
+                        request.minimumTextHeight = 0.003
+                        try? VNImageRequestHandler(cgImage:tile,orientation:rotated ? .right : .up,options:[:]).perform([request])
+                        for observation in request.results ?? [] {
+                            guard let token = observation.topCandidates(1).first else { continue }
+                            let b = observation.boundingBox
+                            let local = rotated ? CGRect(x:1-b.maxY,y:b.minX,width:b.height,height:b.width) : b
+                            let box = CGRect(x:(crop.minX+crop.width*local.minX)/width,
+                                             y:1-crop.maxY/height+local.minY*crop.height/height,
+                                             width:local.width*crop.width/width,height:local.height*crop.height/height)
+                            if !candidates.contains(where: { $0.text == token.string && $0.rectangle.intersects(box) }) {
+                                candidates.append(OCRCandidate(text:token.string,confidence:token.confidence,rectangle:box))
+                            }
+                        }
+                    }
+                }
+            }
             // This is only a bounding-box candidate. Dimension/leader lines may be mistaken for an outline.
             let rect = (rectangles.results ?? []).max(by: {
                 $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
             })?.boundingBox
             let circles = Self.circleCandidates(from: contours.results ?? [], imageWidth: Double(cgImage.width), imageHeight: Double(cgImage.height))
             return RecognitionResult(candidates: candidates, rectangle: rect, circles: circles,
+                                     ordinateDrawing: OrdinateReader.read(candidates, circles: circles, views: (rectangles.results ?? []).map(\.boundingBox), raster: RingImage(cgImage)),
                                      diagnostics: "文字候補\(candidates.count)件・矩形候補\((rectangles.results ?? []).count)件・丸穴候補\(circles.count)件")
         }.value
     }
@@ -90,7 +120,7 @@ enum OfflineVision {
                 // Vision coordinates are normalized independently along x and y.
                 // Compare actual pixel radii, or circles in portrait images get rejected.
                 let pixelRX = rx * imageWidth, pixelRY = ry * imageHeight
-                if rx > 0.005, ry > 0.005, rx < 0.25, ry < 0.25,
+                if rx > 0.0008, ry > 0.0008, rx < 0.25, ry < 0.25,
                    pixelRX > 3, pixelRY > 3,
                    abs(pixelRX - pixelRY) / max(pixelRX, pixelRY) < 0.22 {
                     let cx = (minX+maxX)/2, cy = (minY+maxY)/2
@@ -119,5 +149,206 @@ enum OfflineVision {
             for contour in observation.topLevelContours { walk(contour) }
         }
         return Array(output.sorted { $0.center.x < $1.center.x }.prefix(100))
+    }
+}
+
+// Ordinate drawings print absolute coordinates in a row and a column.
+// Accept an axis only when the printed values describe a consistent scale.
+private enum OrdinateReader {
+    struct Mark {
+        let value: Double
+        let box: CGRect
+        func along(_ horizontal: Bool) -> Double { horizontal ? box.midX : box.midY }
+        func across(_ horizontal: Bool) -> Double { horizontal ? box.midY : box.midX }
+    }
+    struct Axis {
+        let marks: [Mark]
+        let zero: Double
+        let scale: Double
+        let extent: Double
+        func nearest(_ p: Double) -> Mark? {
+            let sorted = marks.filter { $0.value > 0 && $0.value < extent }.sorted {
+                abs($0.value - (p-zero)/scale) < abs($1.value - (p-zero)/scale)
+            }
+            guard let first = sorted.first else { return nil }
+            let error = abs(p-zero-first.value*scale)
+            guard error < abs(scale)*extent*0.075,
+                  sorted.dropFirst().first.map({ error < abs(p-zero-$0.value*scale)*0.70 }) ?? true else { return nil }
+            return first
+        }
+    }
+
+    static func axis(_ marks: [Mark], horizontal: Bool) -> Axis? {
+        var choices: [Axis] = []
+        for origin in marks where origin.value == 0 {
+            let band = horizontal ? origin.box.height : origin.box.width
+            let nearby = marks.filter { abs($0.across(horizontal)-origin.across(horizontal)) < min(0.045,max(0.014,band*1.7)) }
+            for end in nearby where end.value > 0 {
+                let span = end.along(horizontal)-origin.along(horizontal)
+                guard span > 0.055 else { continue }
+                let scale = span/end.value
+                let matching = nearby.filter { m in
+                    m.value >= 0 && m.value <= end.value &&
+                    abs(m.along(horizontal)-origin.along(horizontal)-m.value*scale) < max(0.005,span*0.055)
+                }
+                let unique = Dictionary(grouping: matching, by: { $0.value }).compactMap { _, group in
+                    group.min { abs($0.along(horizontal)-origin.along(horizontal)-$0.value*scale) <
+                                abs($1.along(horizontal)-origin.along(horizontal)-$1.value*scale) }
+                }
+                if unique.count >= 4 {
+                    choices.append(Axis(marks: unique, zero: origin.along(horizontal), scale: scale, extent: end.value))
+                }
+            }
+        }
+        let ranked = choices.sorted { $0.marks.count > $1.marks.count }
+        guard let best = ranked.first, ranked.filter({ $0.marks.count == best.marks.count }).allSatisfy({
+            $0.extent == best.extent && abs($0.zero-best.zero) < 0.01
+        }) else { return nil }
+        return best
+    }
+
+    struct Callout {
+        let count: Int
+        let diameter: Double
+        let thread: Bool
+    }
+    static func read(_ labels: [OCRCandidate], circles: [CircleCandidate], views: [CGRect], raster: RingImage?) -> Drawing? {
+        let labels = labels.filter { $0.confidence >= 0.5 }
+        func clean(_ s: String) -> String { s.precomposedStringWithCompatibilityMapping.replacingOccurrences(of: " ", with: "") }
+        let marks: [Mark] = labels.compactMap {
+            let s = clean($0.text)
+            guard s.range(of: #"^\d{1,4}(?:\.\d{1,3})?$"#, options: .regularExpression) != nil,
+                  let v = Double(s) else { return nil }
+            return Mark(value: v, box: $0.rectangle)
+        }
+        guard let x = axis(marks, horizontal: true), let y = axis(marks, horizontal: false) else { return nil }
+        // An independent overall dimension must repeat the last ordinate.
+        func corroborated(_ a: Axis, horizontal: Bool) -> Bool {
+            guard let first = a.marks.first else { return false }
+            return marks.contains { m in
+                m.value == a.extent && abs(m.across(horizontal)-first.across(horizontal)) > 0.045 &&
+                abs(m.along(horizontal)-(a.zero+a.scale*a.extent*0.5)) < a.scale*a.extent*0.32
+            }
+        }
+        guard corroborated(x,horizontal:true), corroborated(y,horizontal:false) else { return nil }
+        var draft = Drawing()
+        draft.width = x.extent
+        draft.height = y.extent
+        let right = x.zero+x.scale*x.extent
+        let top = y.zero+y.scale*y.extent
+        // Match a thickness dimension below a separate, aligned narrow side view.
+        var thicknesses = Set<Double>()
+        for view in views where view.minX > right && abs(view.minY-y.zero) < y.scale*y.extent*0.15 &&
+            abs(view.maxY-top) < y.scale*y.extent*0.15 {
+            let geometric = view.width/x.scale
+            for m in marks where m.value > 0 && abs(m.value-geometric) < geometric*0.17 &&
+                m.box.midY < view.minY && view.minY-m.box.midY < view.height*0.65 &&
+                abs(view.midX-m.box.midX) < view.width*3 {
+                thicknesses.insert(m.value)
+            }
+        }
+        if thicknesses.count == 1 { draft.thickness = thicknesses.first ?? 0 }
+        let pattern = #"^(?:(\d{1,2})[-‐−×])?([φΦØ⌀M])(\d+(?:\.\d+)?)(?:[xX×](\d+(?:\.\d+)?))?$"#
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return draft }
+        var groups: [Callout] = []
+        for label in labels {
+            let s = clean(label.text)
+            guard let match = re.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else { continue }
+            func field(_ n: Int) -> String? { Range(match.range(at:n),in:s).map { String(s[$0]) } }
+            guard let nominal = Double(field(3) ?? ""), nominal > 0 else { continue }
+            let thread = field(2) == "M"
+            // Only this explicitly supported coarse thread has a cutting-tap pilot suggestion.
+            if thread && !(nominal == 3 && Double(field(4) ?? "") == 0.5) { continue }
+            let count = Int(field(1) ?? "1") ?? 1
+            if count > 0 { groups.append(Callout(count:count, diameter:thread ? 2.5 : nominal, thread:thread)) }
+        }
+        for group in groups.sorted(by: { $0.diameter > $1.diameter }) {
+            var matched: [String:Hole] = [:]
+            for circle in circles {
+                guard circle.center.x > x.zero, circle.center.x < right, circle.center.y > y.zero, circle.center.y < top,
+                      let mx = x.nearest(circle.center.x), let my = y.nearest(circle.center.y) else { continue }
+                let size = (circle.radiusX/x.scale + circle.radiusY/y.scale)
+                let possible = groups.filter { abs(size-$0.diameter) < $0.diameter*0.30 }
+                guard possible.count == 1, possible[0].diameter == group.diameter else { continue }
+                matched["\(mx.value),\(my.value)"] = Hole(x:mx.value,y:my.value,diameter:group.diameter)
+            }
+            // Crosshairs can split the circumference into four separate contours.
+            // Check the actual image for a dark annulus at a printed coordinate pair.
+            if let raster, matched.count < group.count, x.marks.count*y.marks.count < 500 {
+                for mx in x.marks where mx.value > 0 && mx.value < x.extent {
+                    for my in y.marks where my.value > 0 && my.value < y.extent {
+                        let key = "\(mx.value),\(my.value)"
+                        if matched[key] != nil { continue }
+                        let predicted = CGPoint(x:x.zero+mx.value*x.scale,y:y.zero+my.value*y.scale)
+                        let otherX = x.marks.filter { $0.value != mx.value }.map { abs($0.value-mx.value) }.min() ?? x.extent
+                        let otherY = y.marks.filter { $0.value != my.value }.map { abs($0.value-my.value) }.min() ?? y.extent
+                        if raster.hasRing(at:predicted, radius:group.diameter*x.scale*Double(raster.width)/2,
+                                          dx:min(otherX*0.47,x.extent*0.035)*x.scale*Double(raster.width),
+                                          dy:min(otherY*0.47,y.extent*0.06)*y.scale*Double(raster.height)) {
+                            matched[key] = Hole(x:mx.value,y:my.value,diameter:group.diameter)
+                        }
+                    }
+                }
+            }
+            for hole in draft.holes { matched.removeValue(forKey: "\(hole.x),\(hole.y)") }
+            if matched.count == group.count {
+                draft.holes += matched.values.sorted { $0.x < $1.x }
+                if group.thread { draft.notes = "M3×0.5の下穴は切削タップ用の候補φ2.5。加工方法と指定径を確認してください。" }
+            }
+        }
+        return draft
+    }
+}
+
+private struct RingImage {
+    let width: Int
+    let height: Int
+    let gray: [UInt8]
+    private static let directions = (0..<16).map { i -> CGPoint in
+        let angle = (Double(i)+0.5)*Double.pi/8
+        return CGPoint(x:cos(angle),y:sin(angle))
+    }
+
+    init?(_ image: CGImage) {
+        let scale = min(1,1600/Double(max(image.width,image.height)))
+        let w = Int(Double(image.width)*scale), h = Int(Double(image.height)*scale)
+        guard w > 0, h > 0 else { return nil }
+        var pixels = [UInt8](repeating:255,count:w*h)
+        let rendered = pixels.withUnsafeMutableBytes { bytes -> Bool in
+            guard let ctx = CGContext(data:bytes.baseAddress,width:w,height:h,bitsPerComponent:8,
+                                      bytesPerRow:w,space:CGColorSpaceCreateDeviceGray(),bitmapInfo:0) else { return false }
+            ctx.draw(image,in:CGRect(x:0,y:0,width:w,height:h))
+            return true
+        }
+        guard rendered else { return nil }
+        width = w
+        height = h
+        gray = pixels
+    }
+
+    func hasRing(at point: CGPoint, radius: Double, dx: Double, dy: Double) -> Bool {
+        guard radius >= 2, radius <= 80 else { return false }
+        let cx = Int(point.x*Double(width)), cy = Int((1-point.y)*Double(height))
+        let sx = min(32,Int(dx)), sy = min(24,Int(dy))
+        for y in stride(from:cy-sy,through:cy+sy,by:max(1,Int(radius*0.16))) {
+            for x in stride(from:cx-sx,through:cx+sx,by:max(1,Int(radius*0.16))) {
+                for factor in [0.86,1.0,1.14] {
+                    let r = radius*factor
+                    let margin = Int(ceil(r*1.65))+1
+                    guard x >= margin, y >= margin, x+margin < width, y+margin < height else { continue }
+                    var votes = 0
+                    for d in Self.directions {
+                        func sample(_ distance: Double) -> Int {
+                            let px = x+Int((d.x*distance).rounded()), py = y+Int((d.y*distance).rounded())
+                            return Int(gray[py*width+px])
+                        }
+                        let edge = min(sample(r*0.92),sample(r*1.08))
+                        if min(sample(r*0.48),sample(r*1.60))-edge >= 18 { votes += 1 }
+                    }
+                    if votes >= 12 { return true }
+                }
+            }
+        }
+        return false
     }
 }

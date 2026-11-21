@@ -241,8 +241,20 @@ struct MainView: View {
                             Spacer()
                             Text(drawing.holes.isEmpty ? "要確認" : "\(drawing.holes.count)件（未照合）")
                         }
-                        Text("文字数や輪郭の検出件数は加工データではありません。")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if !drawing.holes.isEmpty {
+                            Grid(alignment: .trailing, horizontalSpacing: 18, verticalSpacing: 5) {
+                                GridRow { Text("穴"); Text("中心X"); Text("中心Y"); Text("直径Φ") }
+                                ForEach(Array(drawing.holes.enumerated()), id: \.element.id) { index, hole in
+                                    GridRow {
+                                        Text("\(index+1)")
+                                        Text(hole.x.formatted())
+                                        Text(hole.y.formatted())
+                                        Text(hole.diameter.formatted())
+                                    }
+                                }
+                            }.monospacedDigit()
+                            if !drawing.notes.isEmpty { Text(drawing.notes).font(.caption) }
+                        }
                     }
                 }
                 if !identifiedFields.isEmpty {
@@ -520,7 +532,16 @@ struct MainView: View {
                 let result = try await OfflineVision.analyze(image: photo)
                 await MainActor.run {
                     guard recognitionID == requestID else { return }
+                    let firstRead = analysis == nil
                     analysis = result
+                    if firstRead, let ordinate = result.ordinateDrawing {
+                        drawing.width = ordinate.width
+                        drawing.height = ordinate.height
+                        drawing.thickness = ordinate.thickness
+                        drawing.holes = ordinate.holes
+                        drawing.notes = ordinate.notes
+                        invalidateReview()
+                    }
                     identifiedFields = recognizeDrawingFields(result.candidates)
                     // Only explicit, unambiguous labels may prefill the review form.
                     // The verification flag is never set automatically.
@@ -558,12 +579,12 @@ struct MainView: View {
     private func recognizeDrawingFields(_ lines: [OCRCandidate]) -> [DetectedDrawingField] {
         var found: [DetectedDrawingField] = []
         let pattern = #"(?i)(?:板厚|THICKNESS|THK|(?:^|\s)t)\s*[:：=]?\s*(\d{1,2}(?:[.．]\d{1,2})?)\s*(?:mm)?\s*$"#
-        let chamferPattern = #"(?i)^(?:4\s*[-x×]\s*)?C\s*(\d{1,2}(?:[.．]\d{1,2})?)$"#
+        let chamferPattern = #"(?i)^(?:4\s*[-‐−x×]\s*)?C\s*(\d{1,2}(?:[.．]\d{1,2})?)$"#
         let materialPattern = #"(?i)^(?:SPHC|SPCC|SS400|SUS304|SUS430|SECC|SGCC|A5052|A6061)$"#
         let drawingNumberPattern = #"^\d{3,6}[-‐ー]\d{1,4}[-‐ー]\d{1,4}[-‐ー]\d{1,4}$"#
         let sorted = lines.sorted { $0.confidence > $1.confidence }
         for line in sorted where line.confidence >= 0.55 {
-            let value = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = line.text.precomposedStringWithCompatibilityMapping.trimmingCharacters(in: .whitespacesAndNewlines)
             if let thickness = capturedNumber(value, pattern: pattern), thickness > 0, thickness <= 50 {
                 found.append(DetectedDrawingField(key: "thickness", label: "板厚", value: "\(thickness)", source: value, sourceID: line.id))
             }

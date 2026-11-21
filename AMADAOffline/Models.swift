@@ -92,5 +92,6 @@ struct RecognitionResult {
     let candidates: [OCRCandidate]
     let rectangle: CGRect?
     let circles: [CircleCandidate]
+    var ordinateDrawing: Drawing? = nil
     let diagnostics: String
 }
