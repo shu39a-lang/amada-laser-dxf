@@ -21,7 +21,7 @@ jobs:
           xcodebuild -list -project AMADAOffline.xcodeproj
       - name: Test DXF output and export safeguards
         run: |
-          swiftc AMADAOffline/DXF.swift tools/DXFSmokeTest.swift -o /tmp/dxf-smoke-test
+          swiftc AMADAOffline/Models.swift AMADAOffline/DXF.swift tools/DXFSmokeTest.swift -o /tmp/dxf-smoke-test
           /tmp/dxf-smoke-test
       - name: Compile iOS simulator app without signing
         run: |
