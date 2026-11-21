@@ -254,9 +254,22 @@ struct MainView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             GroupBox("図面情報（mm）") {
-                VStack {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("読み取れなかった項目は空欄のままにし、原図面で確認してください。").font(.caption).foregroundStyle(.secondary)
+                    TextField("会社名・取引先名", text: $drawing.companyName)
+                    TextField("品名", text: $drawing.partName)
                     TextField("図番", text: $drawing.drawingNumber)
+                    TextField("改訂番号", text: $drawing.revision)
                     TextField("材質", text: $drawing.material)
+                    TextField("数量", text: $drawing.quantity)
+                    Picker("加工機種", selection: $drawing.machineType) {
+                        Text("未指定").tag("未指定")
+                        Text("レーザー").tag("レーザー")
+                        Text("タレパン").tag("タレパン")
+                        Text("その他").tag("その他")
+                    }
+                    TextField("備考・読み取りメモ", text: $drawing.notes, axis: .vertical)
+                        .lineLimit(2...4)
                     valueRow("幅 X", value: $drawing.width)
                     valueRow("高さ Y", value: $drawing.height)
                     valueRow("板厚", value: $drawing.thickness)
@@ -335,6 +348,16 @@ struct MainView: View {
     private var exportScreen: some View {
         VStack(alignment: .leading, spacing: 13) {
             DrawingPreview(drawing: drawing).frame(height: 230)
+            VStack(alignment: .leading, spacing: 4) {
+                if !drawing.companyName.isEmpty { Text("会社名：\(drawing.companyName)") }
+                if !drawing.partName.isEmpty { Text("品名：\(drawing.partName)") }
+                if !drawing.drawingNumber.isEmpty { Text("図番：\(drawing.drawingNumber)") }
+                if !drawing.revision.isEmpty { Text("改訂：\(drawing.revision)") }
+                if !drawing.material.isEmpty { Text("材質：\(drawing.material) ／ 板厚：\(drawing.thickness.formatted()) mm") }
+                Text("加工機種：\(drawing.machineType)")
+                if !drawing.quantity.isEmpty { Text("数量：\(drawing.quantity)") }
+                if !drawing.notes.isEmpty { Text("備考：\(drawing.notes)") }
+            }.font(.subheadline)
             Text("外形 \(drawing.width.formatted()) × \(drawing.height.formatted()) mm ／ 穴 \(drawing.holes.count)か所")
             if !drawing.verified || !drawing.issues.isEmpty {
                 Label("寸法・穴位置の照合が未完了です。工程3で確認してください。", systemImage: "exclamationmark.triangle")
