@@ -29,7 +29,7 @@ enum OfflineVision {
             let rect = (rectangles.results ?? []).max(by: {
                 $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
             })?.boundingBox
-            let circles = Self.circleCandidates(from: contours.results ?? [])
+            let circles = Self.circleCandidates(from: contours.results ?? [], imageWidth: Double(cgImage.width), imageHeight: Double(cgImage.height))
             return RecognitionResult(candidates: candidates, rectangle: rect, circles: circles,
                                      diagnostics: "文字候補\(candidates.count)件・矩形候補\((rectangles.results ?? []).count)件・丸穴候補\(circles.count)件")
         }.value
@@ -37,7 +37,7 @@ enum OfflineVision {
 
     // Contour geometry only provides suggestions. Dimensions are never inferred
     // from pixels alone. Reject open, non-circular, tiny and duplicate contours.
-    private static func circleCandidates(from observations: [VNContoursObservation]) -> [CircleCandidate] {
+    private static func circleCandidates(from observations: [VNContoursObservation], imageWidth: Double, imageHeight: Double) -> [CircleCandidate] {
         var output: [CircleCandidate] = []
         func walk(_ contour: VNContour) {
             let points = (0..<contour.pointCount).map { contour.normalizedPoints[$0] }
@@ -47,8 +47,12 @@ enum OfflineVision {
                 let minY = Double(points.map(\.y).min() ?? 0)
                 let maxY = Double(points.map(\.y).max() ?? 0)
                 let rx = (maxX - minX) / 2, ry = (maxY - minY) / 2
+                // Vision coordinates are normalized independently along x and y.
+                // Compare actual pixel radii, or circles in portrait images get rejected.
+                let pixelRX = rx * imageWidth, pixelRY = ry * imageHeight
                 if rx > 0.005, ry > 0.005, rx < 0.25, ry < 0.25,
-                   abs(rx - ry) / max(rx,ry) < 0.18 {
+                   pixelRX > 3, pixelRY > 3,
+                   abs(pixelRX - pixelRY) / max(pixelRX, pixelRY) < 0.22 {
                     let cx = (minX+maxX)/2, cy = (minY+maxY)/2
                     // Radial consistency with expected ellipse in normalized coordinates.
                     let errors = points.map { point -> Double in
