@@ -1,6 +1,7 @@
 import Foundation
 import Vision
 import UIKit
+import CoreImage
 
 // All processing stays on-device. No API keys, server or network requests.
 enum OfflineVision {
@@ -21,9 +22,36 @@ enum OfflineVision {
             contours.detectsDarkOnLight = true
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             try handler.perform([text, rectangles, contours])
-            let candidates: [OCRCandidate] = (text.results ?? []).compactMap { item in
+            var candidates: [OCRCandidate] = (text.results ?? []).compactMap { item in
                 guard let top = item.topCandidates(1).first else { return nil }
                 return OCRCandidate(text: top.string, confidence: top.confidence, rectangle: item.boundingBox)
+            }
+            // A second contrast-enhanced pass can recover faint dimension labels.
+            // Both passes share the same pixel coordinate space and are merged by
+            // geometry, preferring the more confident text at the same location.
+            if let enhanced = Self.enhanceForText(cgImage) {
+                let retry = VNRecognizeTextRequest()
+                retry.recognitionLevel = .accurate
+                retry.usesLanguageCorrection = false
+                retry.recognitionLanguages = ["ja-JP", "en-US"]
+                retry.minimumTextHeight = 0.003
+                let retryHandler = VNImageRequestHandler(cgImage: enhanced, options: [:])
+                try? retryHandler.perform([retry])
+                for observation in retry.results ?? [] {
+                    guard let top = observation.topCandidates(1).first else { continue }
+                    let item = OCRCandidate(text: top.string, confidence: top.confidence, rectangle: observation.boundingBox)
+                    if let index = candidates.firstIndex(where: {
+                        let intersection = $0.rectangle.intersection(item.rectangle)
+                        let area = max(0, intersection.width) * max(0, intersection.height)
+                        let minimum = min($0.rectangle.width * $0.rectangle.height,
+                                          item.rectangle.width * item.rectangle.height)
+                        return minimum > 0 && area / minimum > 0.60
+                    }) {
+                        if item.confidence > candidates[index].confidence { candidates[index] = item }
+                    } else {
+                        candidates.append(item)
+                    }
+                }
             }
             // This is only a bounding-box candidate. Dimension/leader lines may be mistaken for an outline.
             let rect = (rectangles.results ?? []).max(by: {
@@ -33,6 +61,18 @@ enum OfflineVision {
             return RecognitionResult(candidates: candidates, rectangle: rect, circles: circles,
                                      diagnostics: "文字候補\(candidates.count)件・矩形候補\((rectangles.results ?? []).count)件・丸穴候補\(circles.count)件")
         }.value
+    }
+
+    private static func enhanceForText(_ original: CGImage) -> CGImage? {
+        let input = CIImage(cgImage: original)
+        guard let filter = CIFilter(name: "CIColorControls") else { return nil }
+        filter.setValue(input, forKey: kCIInputImageKey)
+        filter.setValue(0.0, forKey: kCIInputSaturationKey)
+        filter.setValue(1.65, forKey: kCIInputContrastKey)
+        filter.setValue(0.035, forKey: kCIInputBrightnessKey)
+        guard let output = filter.outputImage else { return nil }
+        return CIContext(options: [.useSoftwareRenderer: false])
+            .createCGImage(output, from: input.extent)
     }
 
     // Contour geometry only provides suggestions. Dimensions are never inferred
