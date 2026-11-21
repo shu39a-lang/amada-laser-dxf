@@ -1,0 +1,26 @@
+name: iOS source build check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  simulator-build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Show Xcode
+        run: xcodebuild -version
+      - name: Compile iOS simulator app without signing
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project AMADAOffline.xcodeproj \
+            -scheme AMADAOffline \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
