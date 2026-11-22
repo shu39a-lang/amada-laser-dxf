@@ -116,8 +116,15 @@ enum OfflineVision {
                 $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
             })?.boundingBox
             let circles = Self.circleCandidates(from: contours.results ?? [], imageWidth: Double(cgImage.width), imageHeight: Double(cgImage.height))
+            let raster = RingImage(cgImage)
+            let views = (rectangles.results ?? []).map(\.boundingBox)
+            var drawing = OrdinateReader.read(candidates,circles:circles,views:views,raster:raster)
+            if drawing?.holes.isEmpty != false, let raster {
+                candidates += raster.isolatedLabels()
+                drawing = OrdinateReader.read(candidates,circles:circles,views:views,raster:raster)
+            }
             return RecognitionResult(candidates: candidates, rectangle: rect, circles: circles,
-                                     ordinateDrawing: OrdinateReader.read(candidates, circles: circles, views: (rectangles.results ?? []).map(\.boundingBox), raster: RingImage(cgImage)),
+                                     ordinateDrawing: drawing,
                                      diagnostics: "文字候補\(candidates.count)件・矩形候補\((rectangles.results ?? []).count)件・丸穴候補\(circles.count)件")
         }.value
     }
@@ -467,5 +474,135 @@ private struct RingImage {
             }
         }
         return best
+    }
+
+    // Isolate small annotations from crossing extension lines before the second OCR pass.
+    // Pixel coordinates here have their origin at the top left.
+    func isolatedLabels() -> [OCRCandidate] {
+        guard width >= 100, height >= 100 else { return [] }
+        let w = width, h = height
+        var integral = [Int](repeating:0,count:(w+1)*(h+1))
+        for y in 0..<h {
+            var sum = 0
+            for x in 0..<w {
+                sum += Int(gray[y*w+x])
+                integral[(y+1)*(w+1)+x+1] = integral[y*(w+1)+x+1]+sum
+            }
+        }
+        let window = max(6,min(w,h)/65)
+        var ink = [UInt8](repeating:0,count:w*h)
+        var paper = [UInt8](repeating:255,count:w*h)
+        for y in 0..<h {
+            for x in 0..<w {
+                let x0=max(0,x-window), x1=min(w,x+window+1), y0=max(0,y-window), y1=min(h,y+window+1)
+                let bg = (integral[y1*(w+1)+x1]-integral[y0*(w+1)+x1]-integral[y1*(w+1)+x0]+integral[y0*(w+1)+x0])/((x1-x0)*(y1-y0))
+                let dark = bg-Int(gray[y*w+x])
+                paper[y*w+x] = UInt8(clamping:255-max(0,dark-4)*5)
+                if dark > 23 { ink[y*w+x] = 1 }
+            }
+        }
+        var isolated = ink
+        let cutoff = max(13,min(w,h)/30)
+        for y in 0..<h {
+            var start=0
+            for x in 0...w where x == w || ink[y*w+x] == 0 {
+                if x-start >= cutoff { for i in start..<x { isolated[y*w+i]=0 } }
+                start=x+1
+            }
+        }
+        for x in 0..<w {
+            var start=0
+            for y in 0...h where y == h || ink[y*w+x] == 0 {
+                if y-start >= cutoff { for i in start..<y { isolated[i*w+x]=0 } }
+                start=y+1
+            }
+        }
+        var boxes:[CGRect]=[]
+        for k in isolated.indices where isolated[k] == 1 {
+            var todo=[k]; isolated[k]=0
+            var minX=k%w,maxX=minX,minY=k/w,maxY=minY
+            while let p=todo.popLast() {
+                let x=p%w,y=p/w
+                minX=min(minX,x);maxX=max(maxX,x);minY=min(minY,y);maxY=max(maxY,y)
+                for j in max(0,y-1)...min(h-1,y+1) {
+                    for i in max(0,x-1)...min(w-1,x+1) where isolated[j*w+i] == 1 {
+                        isolated[j*w+i]=0;todo.append(j*w+i)
+                    }
+                }
+            }
+            let a=maxX-minX+1,b=maxY-minY+1
+            if a >= 1 && b >= 1 && a*b >= 3 && max(a,b)<max(36,min(w,h)/9) {
+                boxes.append(CGRect(x:minX,y:minY,width:a,height:b))
+            }
+        }
+        guard boxes.count < 6000 else { return [] }
+        func words(_ vertical:Bool) -> [CGRect] {
+            func oriented(_ b:CGRect)->CGRect { vertical ? CGRect(x:b.minY,y:b.minX,width:b.height,height:b.width) : b }
+            let bs=boxes.map(oriented).filter { $0.height>=3 && $0.height<=max(16,min(w,h)/27) && $0.width <= $0.height*6 }.sorted { $0.minX < $1.minX }
+            var seen=Set<Int>(), output:[CGRect]=[]
+            for i in bs.indices where !seen.contains(i) {
+                let seed=bs[i]; var union=seed; seen.insert(i)
+                for j in (i+1)..<bs.count {
+                    let b=bs[j]
+                    if b.minX-union.maxX > max(3,seed.height*0.65) { break }
+                    if seen.contains(j) || abs(b.midY-seed.midY)>max(1.5,seed.height*0.30) ||
+                        b.height<seed.height*0.55 || b.height>seed.height*1.7 {continue}
+                    union=union.union(b);seen.insert(j)
+                }
+                if union.height>=4 && union.width>=2 && union.width<=union.height*11 {
+                    output.append(oriented(union))
+                }
+            }
+            return output
+        }
+        var found:[OCRCandidate]=[]
+        for vertical in [false,true] {
+            let regions=words(vertical)
+            // Spread isolated words apart so Vision never combines adjacent ordinate columns.
+            let columns=4, rows=10, cw=240, ch=72, aw=columns*cw, ah=rows*ch
+            for start in stride(from:0,to:min(1200,regions.count),by:columns*rows) {
+                let group=Array(regions[start..<min(regions.count,start+columns*rows)])
+                var atlas=[UInt8](repeating:255,count:aw*ah)
+                for (i,box) in group.enumerated() {
+                    let box=box.insetBy(dx:-0.7,dy:-0.7)
+                    let sw=vertical ? box.height:box.width, sh=vertical ? box.width:box.height
+                    let scale=min(8,min(46/sh,Double(cw-20)/sw))
+                    let dw=max(1,Int(sw*scale)), dh=max(1,Int(sh*scale))
+                    let ox=(i%columns)*cw+(cw-dw)/2, oy=(i/columns)*ch+(ch-dh)/2
+                    for dy in 0..<dh {
+                        for dx in 0..<dw {
+                            let u=(Double(dx)+0.5)/scale,v=(Double(dy)+0.5)/scale
+                            let px=(vertical ? box.minX+v : box.minX+u)-0.5
+                            let py=(vertical ? box.maxY-u : box.minY+v)-0.5
+                            let ix=max(0,min(w-2,Int(floor(px)))),iy=max(0,min(h-2,Int(floor(py))))
+                            let fx=max(0,min(1,px-Double(ix))),fy=max(0,min(1,py-Double(iy)))
+                            let z=iy*w+ix
+                            let top=Double(paper[z])*(1-fx)+Double(paper[z+1])*fx
+                            let bottom=Double(paper[z+w])*(1-fx)+Double(paper[z+w+1])*fx
+                            atlas[(oy+dy)*aw+ox+dx]=UInt8(clamping:Int(top*(1-fy)+bottom*fy))
+                        }
+                    }
+                }
+                guard let data=CGDataProvider(data:Data(atlas) as CFData),
+                      let img=CGImage(width:aw,height:ah,bitsPerComponent:8,bitsPerPixel:8,bytesPerRow:aw,
+                        space:CGColorSpaceCreateDeviceGray(),bitmapInfo:CGBitmapInfo(rawValue:0),provider:data,
+                        decode:nil,shouldInterpolate:false,intent:.defaultIntent) else {continue}
+                let req=VNRecognizeTextRequest()
+                req.recognitionLevel = .accurate;req.usesLanguageCorrection=false;req.recognitionLanguages=["en-US"]
+                #if os(macOS)
+                req.usesCPUOnly=true
+                #endif
+                try? VNImageRequestHandler(cgImage:img,options:[:]).perform([req])
+                for obs in req.results ?? [] {
+                    let b=obs.boundingBox
+                    let col=Int(b.midX*Double(columns)), row=Int((1-b.midY)*Double(rows))
+                    let n=row*columns+col
+                    guard n>=0,n<group.count, b.width*Double(aw)<Double(cw),let t=obs.topCandidates(1).first else {continue}
+                    let r=group[n]
+                    found.append(OCRCandidate(text:t.string,confidence:t.confidence,rectangle:CGRect(x:r.minX/Double(w),y:1-r.maxY/Double(h),width:r.width/Double(w),height:r.height/Double(h))))
+                }
+            }
+        }
+        return found
     }
 }
