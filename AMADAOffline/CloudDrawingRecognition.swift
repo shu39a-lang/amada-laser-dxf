@@ -19,6 +19,7 @@ enum CloudDrawingRecognition {
         let drawing_number: String?
         let holes: [AIHole]?
         let warnings: [String]?
+        let read_numbers: [String]?
     }
     enum RecognitionError: LocalizedError {
         case invalidResponse
@@ -32,7 +33,7 @@ enum CloudDrawingRecognition {
     Return a single valid JSON object, with no Markdown, in this exact format:
     {"width":null,"height":null,"thickness":null,"chamfer":null,
     "material":null,"drawing_number":null,
-    "holes":[],"warnings":[]}
+    "holes":[],"warnings":[],"read_numbers":[]}
     Lengths are in millimeters. X and Y must use a documented lower-left origin.
     Only return numbers explicitly established by dimension lines or ordinate
     coordinates AND the associated identifiable hole. Do not estimate pixels.
@@ -44,6 +45,8 @@ enum CloudDrawingRecognition {
     All identifiable hole candidates must have x,y,diameter keys; max 150.
     A valid ordinate zero (X=0 or Y=0) is allowed if explicitly marked.
     The center coordinates and hole diameters must use the same millimeter units.
+    Also return read_numbers: an array of the exact dimension and hole callout texts
+    legible in the photographed drawing, in approximate page reading order.
     Include Japanese warnings describing any uncertainty, missing axes or omitted holes.
     Never generate cutting code, NC code, or machine operation instructions.
     """
