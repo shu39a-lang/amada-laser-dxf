@@ -299,14 +299,17 @@ struct MainView: View {
         recognitionSummary = "Google OCRに接続して図面を解析しています"
         Task {
             do {
-                let words = try await CloudDrawingRecognition.read(normalized)
-                guard recognitionID == id, let raster = normalized.cgImage else { return }
-                let result = await Task.detached(priority: .userInitiated) {
-                    OfflineVision.geometry(cgImage: raster, candidates: words)
+                guard let original = normalized.cgImage else { throw URLError(.cannotDecodeContentData) }
+                let raster = await Task.detached(priority: .userInitiated) {
+                    OfflineVision.flattenPage(original)
                 }.value
                 guard recognitionID == id else { return }
+                let words = try await CloudDrawingRecognition.read(UIImage(cgImage: raster))
+                guard recognitionID == id else { return }
+                let result = try await OfflineVision.analyze(cgImage: raster, cloudWords: words)
+                guard recognitionID == id else { return }
                 drawing = result.ordinateDrawing ?? Drawing()
-                for field in recognizeDrawingFields(words) {
+                for field in recognizeDrawingFields(result.candidates) {
                     switch field.key {
                     case "thickness": drawing.thickness = Double(field.value) ?? 0
                     case "chamfer": drawing.chamfer = Double(field.value) ?? 0

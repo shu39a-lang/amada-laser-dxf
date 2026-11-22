@@ -35,7 +35,7 @@ enum CloudDrawingRecognition {
         }
         return try JSONDecoder().decode(Response.self, from: body).words.compactMap { word in
             let b = word.box
-            guard !word.text.isEmpty, word.confidence >= 0.65, word.confidence <= 1,
+            guard !word.text.isEmpty, word.confidence >= 0.25, word.confidence <= 1,
                   b.count == 4, b.allSatisfy({ (0...1).contains($0) }),
                   b[2] > b[0], b[3] > b[1] else { return nil }
             let box = CGRect(x: b[0], y: 1 - b[3], width: b[2] - b[0], height: b[3] - b[1])
