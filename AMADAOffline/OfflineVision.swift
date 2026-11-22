@@ -275,7 +275,11 @@ private enum OrdinateReader {
         let thread: Bool
     }
     static func read(_ labels: [OCRCandidate], circles: [CircleCandidate], views: [CGRect], raster: RingImage?) -> Drawing? {
-        let labels = labels.filter { $0.confidence >= 0.5 }
+        // Vision commonly assigns 0.30 to an isolated zero. Its location must
+        // agree with at least three other printed ordinate values before use.
+        let labels = labels.filter {
+            $0.confidence >= 0.5 || ($0.confidence >= 0.25 && ["0","O","o","〇"].contains($0.text))
+        }
         func clean(_ s: String) -> String { s.precomposedStringWithCompatibilityMapping.replacingOccurrences(of: " ", with: "") }
         let marks: [Mark] = labels.compactMap {
             let text = clean($0.text)
