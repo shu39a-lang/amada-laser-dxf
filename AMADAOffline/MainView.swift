@@ -167,7 +167,7 @@ struct MainView: View {
             if recognitionSummary.contains("失敗") ||
                 recognitionSummary.contains("特定できませんでした") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("接続エラーの詳細").font(.headline).foregroundStyle(.orange)
+                    Text("図面解析の詳細").font(.headline).foregroundStyle(.orange)
                     Text(message).font(.footnote).foregroundStyle(.white).textSelection(.enabled)
                     Button {
                         UIPasteboard.general.string = message
