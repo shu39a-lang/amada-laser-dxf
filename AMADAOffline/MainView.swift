@@ -263,7 +263,7 @@ struct MainView: View {
                     guard recognitionID == id else { return }
                     drawing = CloudDrawingRecognition.drawing(from: ai)
                     recognitionSummary = "Google AIで解析しました。原図との照合が必要です。"
-                    message = ai.warnings.isEmpty ? "" : ai.warnings.joined(separator: "、")
+                    message = (ai.warnings ?? []).joined(separator: "、")
                     busy = false
                     return
                 } catch {
