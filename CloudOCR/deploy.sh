@@ -38,10 +38,23 @@ for id in "$runtime_id" "$builder_id"; do
 done
 runtime="$runtime_id@$project.iam.gserviceaccount.com"
 builder="$builder_id@$project.iam.gserviceaccount.com"
-gcp projects add-iam-policy-binding "$project" --member="serviceAccount:$builder" \
-    --role=roles/run.builder --condition=None --format=none
-gcp projects add-iam-policy-binding "$project" --member="serviceAccount:$runtime" \
-    --role=roles/serviceusage.serviceUsageConsumer --condition=None --format=none
+grant_role() {
+    local email=$1 role=$2 delay output
+    for delay in 0 3 6 12 24 48; do
+        if (( delay )); then sleep "$delay"; fi
+        if output=$(LC_ALL=C gcp projects add-iam-policy-binding "$project" \
+            --member="serviceAccount:$email" --role="$role" --condition=None --format=none 2>&1); then
+            return 0
+        fi
+        printf '%s\n' "$output" >&2
+        if [[ "$output" != *"$email"* || "$output" != *"does not exist"* ]]; then
+            return 1
+        fi
+    done
+    return 1
+}
+grant_role "$builder" roles/run.builder
+grant_role "$runtime" roles/serviceusage.serviceUsageConsumer
 gcp run deploy "$service" --region="$region" --source="$source_dir" \
     --service-account="$runtime" --build-service-account="projects/$project/serviceAccounts/$builder" \
     --set-env-vars="FIREBASE_IOS_APP_ID=$app_id,GOOGLE_CLOUD_PROJECT=$project" \
