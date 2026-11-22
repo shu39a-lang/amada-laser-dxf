@@ -20,6 +20,22 @@ workflows:
         XCODE_SCHEME: SHEETMASTER
       xcode: latest
     scripts:
+      - name: Verify original HTML and Xcode project
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          printf '%s  %s\n' '1f4d4313772e446106e939aa1c3266e8e8d11eb6f8b3ec542dfdc0a7e43ea71d' 'SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html' | shasum -a 256 -c -
+          plutil -lint "$XCODE_PROJECT/project.pbxproj" "SHEET_MASTER_iOS/SHEETMASTER/Info.plist"
+          xcodebuild -list -project "$XCODE_PROJECT"
+      - name: Set unique TestFlight build number
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          LATEST=$(app-store-connect get-latest-build-number 6837735676 --version-string 1.0.0)
+          [[ "$LATEST" =~ ^[0-9]+$ ]] || { echo "Cannot verify latest Apple build number"; exit 1; }
+          NEXT=$((LATEST + 1))
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT" SHEET_MASTER_iOS/SHEETMASTER/Info.plist
+          echo "TestFlight build number: $NEXT"
       - name: Set up signing
         script: |
           xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT" --archive-method app-store
