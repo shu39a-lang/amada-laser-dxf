@@ -322,8 +322,8 @@ private enum OrdinateReader {
         for label in labels {
             let original = clean(label.text)
             // OCR may read the crossed diameter glyph as zero after a quantity.
-            // Keep this substitution confined to counted callouts with decimal diameters.
-            let s = original.replacingOccurrences(of: #"^(\d{1,2}[-‐−])0(?=[1-9]\d*\.\d+$)"#,
+            // Keep this substitution confined to counted callouts backed by a measured ring.
+            let s = original.replacingOccurrences(of: #"^(\d{1,2}[-‐−])0(?=[1-9]\d*(?:\.\d+)?$)"#,
                                                   with:"$1Ø",options:.regularExpression)
             guard let match = re.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else { continue }
             func field(_ n: Int) -> String? { Range(match.range(at:n),in:s).map { String(s[$0]) } }

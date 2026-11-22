@@ -60,3 +60,4 @@ jobs:
             exit 1
           }
           cat /tmp/recognition.log
+          /tmp/photo-test tools/alternate-ordinate-fixture.png --alternate

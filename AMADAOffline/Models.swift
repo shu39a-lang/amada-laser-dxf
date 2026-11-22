@@ -27,9 +27,14 @@ struct Drawing: Codable {
     var verified = false
 
     var issues: [String] {
+        var problems = geometryIssues
+        if !thickness.isFinite || thickness <= 0 { problems.append("板厚が未入力です") }
+        return problems
+    }
+
+    var geometryIssues: [String] {
         var errors: [String] = []
         guard width.isFinite, height.isFinite, width > 0, height > 0 else { return ["外形の幅と高さを入力してください"] }
-        if !thickness.isFinite || thickness <= 0 { errors.append("板厚が未入力です") }
         if !chamfer.isFinite || chamfer < 0 || chamfer * 2 >= min(width, height) { errors.append("角Cの値が不正です") }
         for (i, hole) in holes.enumerated() {
             guard hole.x.isFinite, hole.y.isFinite, hole.diameter.isFinite, hole.diameter > 0 else {

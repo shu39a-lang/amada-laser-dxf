@@ -14,7 +14,7 @@ import ImageIO
         let raster = CGImageSourceCreateImageAtIndex(source,0,nil)!
         let result = try await OfflineVision.analyze(cgImage:raster)
         let rows = result.ordinateDrawing?.holes ?? []
-        let expected = [(15.0,28.0,6.5),(135,28,6.5),(23.5,10,2.5),(44.5,10,2.5),(68,23,2.5),(75,23,2.5),(113,23,2.5)]
+        let expected = CommandLine.arguments.contains("--alternate") ? [(12.0,30.0,8.0),(117,30,8),(36,9,2.5),(78,17,2.5)] : [(15.0,28.0,6.5),(135,28,6.5),(23.5,10,2.5),(44.5,10,2.5),(68,23,2.5),(75,23,2.5),(113,23,2.5)]
         guard rows.count == expected.count && zip(rows,expected).allSatisfy({ row,target in
             row.x == target.0 && row.y == target.1 && row.diameter == target.2
         }) else {
@@ -23,6 +23,6 @@ import ImageIO
             FileHandle.standardError.write(Data("::error::Drawing: \(String(describing:result.ordinateDrawing)). Rows: \(actual). OCR: \(labels)\n".utf8))
             throw NSError(domain:"RecognitionTest",code:1)
         }
-        print("Reference layout: all seven rows matched from image pixels.")
+        print("All \(rows.count) rows matched from image pixels.")
     }
 }

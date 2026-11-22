@@ -31,6 +31,14 @@ struct DXFSmokeTest {
         precondition(hasSequence(["0", "CIRCLE", "8", "CUT_HOLES", "10", "25.0000", "20", "20.0000", "30", "0", "40", "4.0000"]), "hole size and position")
         precondition(tokens.filter { $0 == "LINE" }.count == 8, "8 chamfered outline edges")
         precondition(hasSequence(["0", "EOF"]), "DXF ends with EOF")
+        var draft = drawing
+        draft.verified = false
+        draft.thickness = 0
+        let preview = try DXF.preview(draft)
+        precondition(preview == data, "2D preview changed the parsed hole positions")
+        precondition((try? DXF.generate(draft)) == nil, "unverified production export allowed")
+        draft.holes[0].diameter = 0
+        precondition((try? DXF.preview(draft)) == nil, "missing hole diameter exported")
         var invalid = drawing
         invalid.verified = false
         precondition((try? DXF.generate(invalid)) == nil, "unverified cuts must not export")

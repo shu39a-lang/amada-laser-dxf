@@ -9,7 +9,7 @@ enum DXF {
     }
 
     static func preview(_ d: Drawing) throws -> Data {
-        guard d.issues.isEmpty else { throw NSError(domain:"AMADA", code:3, userInfo:[NSLocalizedDescriptionKey:d.issues.joined(separator:"、")]) }
+        guard d.geometryIssues.isEmpty else { throw NSError(domain:"AMADA", code:3, userInfo:[NSLocalizedDescriptionKey:d.geometryIssues.joined(separator:"、")]) }
         // ASCII-only DXF R12, closed outline in CUT_OUTLINE and circles in CUT_HOLES.
         func f(_ n: Double) -> String { String(format: "%.4f", locale: Locale(identifier: "en_US_POSIX"), n) }
         // R12 does not define $INSUNITS (introduced in later DXF versions).

@@ -183,7 +183,7 @@ struct MainView: View {
     }
 
     private func createDXF() {
-        guard drawing.issues.isEmpty else { message = drawing.issues.joined(separator:"、"); return }
+        guard drawing.geometryIssues.isEmpty else { message = drawing.geometryIssues.joined(separator:"、"); return }
         do {
             let data = try DXF.preview(drawing)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("drawing_\(UUID().uuidString.prefix(8)).dxf")
