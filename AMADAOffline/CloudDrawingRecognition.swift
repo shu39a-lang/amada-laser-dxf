@@ -72,7 +72,6 @@ enum CloudDrawingRecognition {
             .generativeModel(
                 modelName: "gemini-3.8-flash",
                 generationConfig: GenerationConfig(
-                    temperature: 0,
                     responseMIMEType: "application/json"
                 )
             )
