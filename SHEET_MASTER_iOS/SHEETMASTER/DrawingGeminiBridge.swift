@@ -29,7 +29,7 @@ enum DrawingGeminiBridge {
         let model = FirebaseAI.firebaseAI(
             backend: .googleAI(), useLimitedUseAppCheckTokens: true
         ).generativeModel(
-            modelName: "gemini-2.5-flash",
+            modelName: "gemini-3.8-flash",
             generationConfig: GenerationConfig(responseMIMEType: "application/json")
         )
         let response = try await model.generateContent(image, prompt)
