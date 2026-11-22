@@ -21,6 +21,15 @@ workflows:
         XCODE_SCHEME: "AMADAOffline"
       xcode: latest
     scripts:
+      - name: Configure Google AI HTTPS endpoint
+        script: |
+          set -euo pipefail
+          : "${SHEET_MASTER_API_URL:?Google AI Cloud Run endpoint is not deployed or configured}"
+          case "$SHEET_MASTER_API_URL" in
+            https://*) ;;
+            *) echo "Endpoint must use HTTPS"; exit 1 ;;
+          esac
+          /usr/libexec/PlistBuddy -c "Set :SHEET_MASTER_API_URL $SHEET_MASTER_API_URL" "$CM_BUILD_DIR/AMADAOffline/Info.plist"
       - name: Apply Apple signing profiles
         script: xcode-project use-profiles
       - name: Set unique build version
