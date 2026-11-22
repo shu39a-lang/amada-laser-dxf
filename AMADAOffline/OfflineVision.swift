@@ -275,10 +275,15 @@ private enum OrdinateReader {
         let thread: Bool
     }
     static func read(_ labels: [OCRCandidate], circles: [CircleCandidate], views: [CGRect], raster: RingImage?) -> Drawing? {
-        // Vision commonly assigns 0.30 to an isolated zero. Its location must
-        // agree with at least three other printed ordinate values before use.
-        let labels = labels.filter {
-            $0.confidence >= 0.5 || ($0.confidence >= 0.25 && ["0","O","o","〇"].contains($0.text))
+        // Short and rotated dimension labels often receive a low text score.
+        // Numeric candidates additionally need a spatial fit on the scale and
+        // a detected ring before they can appear in a hole row.
+        let labels = labels.filter { candidate in
+            if candidate.confidence >= 0.5 { return true }
+            let token = candidate.text.precomposedStringWithCompatibilityMapping
+            return candidate.confidence >= 0.25 &&
+                (["O","o","〇"].contains(token) ||
+                 token.range(of: #"^\d{1,4}(?:\.\d{1,3})?$"#,options:.regularExpression) != nil)
         }
         func clean(_ s: String) -> String { s.precomposedStringWithCompatibilityMapping.replacingOccurrences(of: " ", with: "") }
         let marks: [Mark] = labels.compactMap {
