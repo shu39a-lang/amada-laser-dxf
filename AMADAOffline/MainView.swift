@@ -164,7 +164,8 @@ struct MainView: View {
                 Text(recognitionSummary).font(.subheadline.bold())
                     .foregroundStyle(recognitionSummary.contains("失敗") ? .orange : .white)
             }
-            if recognitionSummary.contains("失敗") {
+            if recognitionSummary.contains("失敗") ||
+                recognitionSummary.contains("特定できませんでした") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("接続エラーの詳細").font(.headline).foregroundStyle(.orange)
                     Text(message).font(.footnote).foregroundStyle(.white).textSelection(.enabled)
@@ -178,13 +179,14 @@ struct MainView: View {
                 .padding(12)
                 .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
             }
-            if recognitionSummary.contains("失敗"), let photo {
+            if (recognitionSummary.contains("失敗") ||
+                 recognitionSummary.contains("特定できませんでした")), let photo {
                 Button("Google OCRで再読み取り") {
                     recognizeGoogleDrawing(photo)
                 }.buttonStyle(MasterYellowButton())
             }
             if !detectedText.isEmpty {
-                DisclosureGroup("Google OCRが読み取った印刷数値・寸法候補（\(detectedText.count)件）") {
+                DisclosureGroup("OCR・AIが読み取った印刷数値・寸法候補（\(detectedText.count)件）") {
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(detectedText.indices, id: \.self) { index in
                             Text(detectedText[index])
@@ -360,6 +362,12 @@ struct MainView: View {
                         let ai = try await CloudDrawingRecognition.analyze(normalized, ocrHints: words.map(\.text))
                         guard recognitionID == id else { return }
                         let candidate = CloudDrawingRecognition.drawing(from: ai)
+                        // Retain the exact recognized labels for troubleshooting, even
+                        // when the model cannot associate them with a hole center.
+                        for label in ai.read_numbers ?? [] where
+                            !detectedText.contains(label) && detectedText.count < 300 {
+                            detectedText.append(label)
+                        }
                         // Prefer measured geometric readings. AI values are provisional
                         // and always require comparison against the original drawing.
                         if drawing.width <= 0 { drawing.width = candidate.width }
@@ -373,7 +381,8 @@ struct MainView: View {
                             drawing.notes += (drawing.notes.isEmpty ? "" : "\n") + candidate.notes
                         }
                         if drawing.holes.isEmpty && drawing.width <= 0 && drawing.height <= 0 {
-                            recognitionSummary = "文字\(words.count)件を検出しましたが、寸法・穴位置は特定できませんでした"
+                            recognitionSummary = "文字\(words.count)件を検出。AI解析でも寸法・穴位置を特定できませんでした"
+                            message += "\nAI解析結果: 穴0件、幅と高さ未検出。図面全体の寸法線が写っているか確認してください。"
                         } else {
                             recognitionSummary = "OCR \(words.count)件＋AI図面解析：穴\(drawing.holes.count)件（原図との照合が必要）"
                         }
