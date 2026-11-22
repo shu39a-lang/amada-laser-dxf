@@ -34,7 +34,7 @@ jobs:
           assert 'MasterYellowButton' in view
           assert 'CloudDrawingRecognition.analyze(normalized)' in view
           assert 'OfflineVision.analyze(image:normalized)' not in view
-          assert 'FirebaseAI.firebaseAI(backend: .googleAI())' in cloud
+          assert 'FirebaseAI.firebaseAI(backend: .googleAI(), useLimitedUseAppCheckTokens: true)' in cloud
           assert 'gemini-3.8-flash' in cloud
           assert 'FirebaseApp.configure()' in app
           assert 'FirebaseAILogic' in project and 'FirebaseAppCheck' in project
