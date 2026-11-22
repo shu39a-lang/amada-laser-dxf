@@ -1,0 +1,46 @@
+name: Check a photographed drawing
+on:
+  push:
+    branches: [photo-regression-1122]
+    paths: [.github/workflows/photo-check.yml]
+permissions:
+  contents: write
+jobs:
+  measure:
+    runs-on: macos-15
+    timeout-minutes: 36
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: photo-regression-1122
+      - name: Start temporary image reader
+        run: |
+          git config user.name "SHEET MASTER image test"
+          git config user.email "actions@users.noreply.github.com"
+          openssl genrsa -out "$RUNNER_TEMP/key.pem" 3072
+          openssl rsa -in "$RUNNER_TEMP/key.pem" -pubout -out test-reader.pub
+          git add test-reader.pub
+          git commit -m 'Make a temporary public key for this image test'
+          git push origin HEAD:photo-regression-1122
+      - name: Test image without storing its plaintext
+        run: |
+          set -eu
+          trap 'rm -f "$RUNNER_TEMP/key.pem" "$RUNNER_TEMP/photo.png" "$RUNNER_TEMP/password"' EXIT
+          for round in $(seq 1 180); do
+            git pull -q --ff-only origin photo-regression-1122
+            test ! -f test-done || exit 0
+            if test -f test-image.enc && test -f test-version && ! cmp -s test-version last-tested; then
+              openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/key.pem" -in test-key.enc -out "$RUNNER_TEMP/password"
+              openssl enc -d -aes-256-cbc -pbkdf2 -in test-image.enc -out "$RUNNER_TEMP/photo.png" -pass "file:$RUNNER_TEMP/password"
+              if swiftc -O AMADAOffline/Models.swift AMADAOffline/OfflineVision.swift tools/Probe.swift -o "$RUNNER_TEMP/check"; then
+                "$RUNNER_TEMP/check" "$RUNNER_TEMP/photo.png" > test-measurements.txt
+              else
+                echo 'Compile failed' > test-measurements.txt
+              fi
+              cp test-version last-tested
+              git add last-tested test-measurements.txt
+              git commit -m 'Record numeric results of the photographed sheet test'
+              git push origin HEAD:photo-regression-1122
+            fi
+            sleep 10
+          done
