@@ -1,6 +1,13 @@
 workflows:
   ios-testflight:
-    name: AMADA DXF - iOS TestFlight
+    name: SHEET MASTER - iOS TestFlight
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+      cancel_previous_builds: true
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
@@ -30,5 +37,5 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        submit_to_testflight: false
+        submit_to_testflight: true
         submit_to_app_store: false
