@@ -27,10 +27,17 @@ workflows:
           xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT" --archive-method app-store --code-signing-setup-verbose-logging
           echo "=== App Store signing settings ==="
           xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings 2>/dev/null | grep -E ' (CODE_SIGN_ENTITLEMENTS|CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|PROVISIONING_PROFILE_SPECIFIER|PRODUCT_BUNDLE_IDENTIFIER) =' | sort -u || true
-      - name: Set unique build version
+      - name: Set build number above latest App Store Connect upload
         script: |
+          set -euo pipefail
           cd "$CM_BUILD_DIR"
-          xcrun agvtool new-version -all "$BUILD_NUMBER"
+          # Build numbers are unique per app version; do not reuse Codemagic's workflow BUILD_NUMBER.
+          APP_STORE_APPLE_ID=6837735676
+          LATEST_BUILD=$(app-store-connect get-latest-build-number "$APP_STORE_APPLE_ID" --version-string 1.0.0)
+          [[ "$LATEST_BUILD" =~ ^[0-9]+$ ]] || { echo "Cannot determine latest TestFlight build: $LATEST_BUILD"; exit 1; }
+          NEXT_BUILD=$((LATEST_BUILD + 1))
+          echo "Latest Apple build=$LATEST_BUILD; assigning build=$NEXT_BUILD"
+          xcrun agvtool new-version -all "$NEXT_BUILD"
       - name: Verify Xcode compilation before signing
         script: |
           set -o pipefail
