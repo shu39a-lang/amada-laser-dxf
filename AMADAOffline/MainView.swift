@@ -326,7 +326,7 @@ struct MainView: View {
                 if needsAI {
                     recognitionSummary = "OCRで\(words.count)件読み取りました。図面の数値をAIで再解析中…"
                     do {
-                        let ai = try await CloudDrawingRecognition.analyze(normalized)
+                        let ai = try await CloudDrawingRecognition.analyze(normalized, ocrHints: words.map(\.text))
                         guard recognitionID == id else { return }
                         let candidate = CloudDrawingRecognition.drawing(from: ai)
                         // Prefer measured geometric readings. AI values are provisional
