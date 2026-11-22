@@ -36,6 +36,11 @@ workflows:
           NEXT=$((LATEST + 1))
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT" SHEET_MASTER_iOS/SHEETMASTER/Info.plist
           echo "TestFlight build number: $NEXT"
+      - name: Compile Swift and Firebase dependencies without signing
+        script: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME"
+          xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
       - name: Set up signing
         script: |
           xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT" --archive-method app-store
