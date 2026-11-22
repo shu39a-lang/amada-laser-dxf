@@ -1,0 +1,15 @@
+name: Check recognition source
+on:
+  push:
+    branches: [photo-regression-1122]
+    paths: [AMADAOffline/OfflineVision.swift, .github/workflows/compile-reader.yml]
+jobs:
+  compile:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          swiftc -O AMADAOffline/Models.swift AMADAOffline/OfflineVision.swift tools/Probe.swift -o /tmp/check 2> /tmp/messages || {
+            grep -A4 'error:' /tmp/messages | head -c 3000 | tr '\n' ' ' | sed 's/^/::error::/'
+            exit 1
+          }
