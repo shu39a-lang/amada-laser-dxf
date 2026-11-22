@@ -1,0 +1,4 @@
+Flask>=3.0,<4
+firebase-admin>=6.6,<8
+google-cloud-vision>=3.8,<4
+gunicorn>=22,<24
