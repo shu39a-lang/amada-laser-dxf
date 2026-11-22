@@ -272,7 +272,9 @@ struct MainView: View {
     private func loadPhoto(_ image: UIImage) {
         // Normalize camera / photo-library orientation before Vision obtains cgImage.
         let originalSize = image.size
-        let maxSide: CGFloat = 2400
+        // Preserve fine dimension text in high-resolution engineering drawings.
+// Previously shrinking all photographs to 2400 px erased small labels.
+        let maxSide: CGFloat = 3200
         let factor = min(1, maxSide / max(originalSize.width, originalSize.height, 1))
         let size = CGSize(width: max(1, originalSize.width * factor),
                           height: max(1, originalSize.height * factor))
