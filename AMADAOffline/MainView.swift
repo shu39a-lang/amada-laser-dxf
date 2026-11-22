@@ -308,7 +308,11 @@ struct MainView: View {
             } catch {
                 guard recognitionID == id else { return }
                 recognitionSummary = "Google AIとの接続に失敗しました"
-                message = "Google AIを利用できません。通信とFirebase AI Logic設定を確認してください。詳細：\(error.localizedDescription)"
+                let ns = error as NSError
+                let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError
+                let detail = underlying.map { " / 原因: \($0.domain) (\($0.code)): \($0.localizedDescription)" } ?? ""
+                message = "Firebase接続エラー [\(ns.domain) / \(ns.code)] \(error.localizedDescription)\(detail)"
+                print("[SHEET MASTER] \(message)")
             }
             guard recognitionID == id else { return }
             busy = false
