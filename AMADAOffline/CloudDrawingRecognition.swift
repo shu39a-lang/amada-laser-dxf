@@ -22,7 +22,7 @@ enum CloudDrawingRecognition {
         // A detailed photo may exceed the server's 8 MB limit at quality 0.92;
         // retry JPEG encoding before treating that as a recognition failure.
         var jpeg: Data?
-        for quality: CGFloat in [0.92, 0.82, 0.70, 0.55] {
+        for quality in [CGFloat(0.92), 0.82, 0.70, 0.55] {
             if let candidate = image.jpegData(compressionQuality: quality),
                candidate.count <= 8 * 1024 * 1024 {
                 jpeg = candidate
