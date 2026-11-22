@@ -17,6 +17,8 @@ struct MainView: View {
     @State private var input = ""
     @State private var error = ""
     @State private var verifiedAgainstOriginal = false
+    @State private var detectedText: [String] = []
+    @State private var recognitionSummary = ""
 
     private enum EditTarget: Hashable, Identifiable {
         case width, height, thickness, chamfer, x(UUID), y(UUID), diameter(UUID)
@@ -130,6 +132,21 @@ struct MainView: View {
                     edit(.x(hole.id), value: 0)
                 }.buttonStyle(.bordered).frame(maxWidth:.infinity,alignment:.leading)
             }
+            if !recognitionSummary.isEmpty {
+                Text(recognitionSummary).font(.caption).foregroundStyle(.secondary)
+            }
+            if !detectedText.isEmpty {
+                DisclosureGroup("写真から読み取った文字・寸法候補（\(detectedText.count)件）") {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(detectedText.indices, id: \.self) { index in
+                            Text(detectedText[index])
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }.padding(.vertical, 6)
+                }
+            }
             GroupBox("外形・板厚（mm）") {
                 HStack {
                     sizeCell(.width,drawing.width); sizeCell(.height,drawing.height)
@@ -217,6 +234,8 @@ struct MainView: View {
         photo = normalized
         selected = nil
         drawing = Drawing()
+        detectedText = []
+        recognitionSummary = ""
         message = ""
         exportURL = nil
         previewOriginal = false
@@ -229,6 +248,20 @@ struct MainView: View {
                 let analysis = try await OfflineVision.analyze(image:normalized)
                 guard recognitionID == id else { return }
                 drawing = analysis.ordinateDrawing ?? Drawing()
+                recognitionSummary = analysis.diagnostics
+                var seen = Set<String>()
+                detectedText = analysis.candidates
+                    .filter { $0.confidence >= 0.35 }
+                    .sorted { a, b in
+                        if abs(a.rectangle.midY - b.rectangle.midY) > 0.012 {
+                            return a.rectangle.midY > b.rectangle.midY
+                        }
+                        return a.rectangle.minX < b.rectangle.minX
+                    }
+                    .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty && seen.insert($0).inserted }
+                    .prefix(100)
+                    .map { $0 }
                 for field in recognizeDrawingFields(analysis.candidates) {
                     switch field.key {
                     case "thickness": drawing.thickness = Double(field.value) ?? drawing.thickness
