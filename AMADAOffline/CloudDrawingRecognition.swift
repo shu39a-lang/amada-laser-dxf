@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import FirebaseAILogic
+import FirebaseAppCheck
 
 // Firebase AI Logic sends images to Gemini through Google's protected Firebase proxy.
 // No Google AI API secret or custom Cloud Run endpoint is stored in this app.
@@ -23,8 +24,14 @@ enum CloudDrawingRecognition {
     }
     enum RecognitionError: LocalizedError {
         case invalidResponse
+        case appCheckFailed(String)
         var errorDescription: String? {
-            "Google AIの結果を解析できませんでした"
+            switch self {
+            case .invalidResponse:
+                return "Google AIの結果を解析できませんでした"
+            case .appCheckFailed(let detail):
+                return "Firebase App Check認証に失敗しました。\(detail)"
+            }
         }
     }
 
@@ -52,6 +59,15 @@ enum CloudDrawingRecognition {
     """
 
     static func analyze(_ photo: UIImage) async throws -> AIResult {
+        // Firebase AI Logic requires App Check verification; validate it first
+        // to distinguish device attestation failures from model/API failures.
+        // Never log or expose the token itself.
+        do {
+            _ = try await AppCheck.appCheck().token(forcingRefresh: false)
+        } catch {
+            let e = error as NSError
+            throw RecognitionError.appCheckFailed("\(e.domain) [\(e.code)]: \(e.localizedDescription)")
+        }
         let model = FirebaseAI.firebaseAI(backend: .googleAI())
             .generativeModel(
                 modelName: "gemini-3.8-flash",
