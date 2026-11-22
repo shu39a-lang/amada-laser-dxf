@@ -68,7 +68,7 @@ enum CloudDrawingRecognition {
             let e = error as NSError
             throw RecognitionError.appCheckFailed("\(e.domain) [\(e.code)]: \(e.localizedDescription)")
         }
-        let model = FirebaseAI.firebaseAI(backend: .googleAI())
+        let model = FirebaseAI.firebaseAI(backend: .googleAI(), useLimitedUseAppCheckTokens: true)
             .generativeModel(
                 modelName: "gemini-3.8-flash",
                 generationConfig: GenerationConfig(
