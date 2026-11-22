@@ -22,7 +22,7 @@ workflows:
       xcode: latest
     scripts:
       - name: Apply Apple signing profiles
-        script: xcode-project use-profiles
+        script: xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT"
       - name: Set unique build version
         script: |
           cd "$CM_BUILD_DIR"
