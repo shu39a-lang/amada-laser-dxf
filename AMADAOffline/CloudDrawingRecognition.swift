@@ -32,7 +32,7 @@ enum CloudDrawingRecognition {
     Return a single valid JSON object, with no Markdown, in this exact format:
     {"width":null,"height":null,"thickness":null,"chamfer":null,
     "material":null,"drawing_number":null,
-    "holes":[{"x":null,"y":null,"diameter":null}],"warnings":[]}
+    "holes":[],"warnings":[]}
     Lengths are in millimeters. X and Y must use a documented lower-left origin.
     Only return numbers explicitly established by dimension lines or ordinate
     coordinates AND the associated identifiable hole. Do not estimate pixels.
@@ -40,7 +40,10 @@ enum CloudDrawingRecognition {
     multiple holes, count only those with verifiable centers.
     Do not confuse diameter symbols, quantity, or thread with hole coordinates.
     Unknown or ambiguous measurements MUST be null, never guessed.
-    All holes must have x,y,diameter keys; max 150.
+    When no center or diameter is identifiable, do not invent a hole.
+    All identifiable hole candidates must have x,y,diameter keys; max 150.
+    A valid ordinate zero (X=0 or Y=0) is allowed if explicitly marked.
+    The center coordinates and hole diameters must use the same millimeter units.
     Include Japanese warnings describing any uncertainty, missing axes or omitted holes.
     Never generate cutting code, NC code, or machine operation instructions.
     """
@@ -64,28 +67,37 @@ enum CloudDrawingRecognition {
         guard let data = json.data(using: .utf8) else {
             throw RecognitionError.invalidResponse
         }
-        return try JSONDecoder().decode(AIResult.self, from: data)
+        let result = try JSONDecoder().decode(AIResult.self, from: data)
+        guard let holes = result.holes, holes.count <= 150 else {
+            throw RecognitionError.invalidResponse
+        }
+        return result
     }
     static func drawing(from ai: AIResult) -> Drawing {
         var d = Drawing()
-        d.width = checked(ai.width)
-        d.height = checked(ai.height)
-        d.thickness = checked(ai.thickness)
-        d.chamfer = checked(ai.chamfer)
+        d.width = checked(ai.width, zeroAllowed: false)
+        d.height = checked(ai.height, zeroAllowed: false)
+        d.thickness = checked(ai.thickness, zeroAllowed: false)
+        d.chamfer = checked(ai.chamfer, zeroAllowed: true)
         d.material = ai.material ?? ""
         d.drawingNumber = ai.drawing_number ?? ""
         d.notes = (ai.warnings ?? []).prefix(20).joined(separator: "\n")
         d.holes = (ai.holes ?? []).prefix(150).map { h in
-            Hole(x: checked(h.x), y: checked(h.y),
-                 xSuggested: h.x == nil, ySuggested: h.y == nil,
-                 diameterSuggested: h.diameter == nil,
-                 diameter: checked(h.diameter))
+            Hole(x: checked(h.x, zeroAllowed: true), y: checked(h.y, zeroAllowed: true),
+                 xSuggested: !isValid(h.x, zeroAllowed: true),
+                 ySuggested: !isValid(h.y, zeroAllowed: true),
+                 diameterSuggested: !isValid(h.diameter, zeroAllowed: false),
+                 diameter: checked(h.diameter, zeroAllowed: false))
         }
         d.verified = false
         return d
     }
-    private static func checked(_ n: Double?) -> Double {
-        guard let n, n.isFinite, n > 0, n <= 100000 else { return 0 }
+    private static func isValid(_ n: Double?, zeroAllowed: Bool) -> Bool {
+        guard let n, n.isFinite, n <= 100000 else { return false }
+        return zeroAllowed ? n >= 0 : n > 0
+    }
+    private static func checked(_ n: Double?, zeroAllowed: Bool) -> Double {
+        guard isValid(n, zeroAllowed: zeroAllowed), let n else { return 0 }
         return n
     }
 }
