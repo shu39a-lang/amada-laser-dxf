@@ -257,6 +257,22 @@ struct MainView: View {
         busy = true
         let id = recognitionID
         Task {
+            if CloudDrawingRecognition.isConfigured {
+                do {
+                    let ai = try await CloudDrawingRecognition.analyze(normalized)
+                    guard recognitionID == id else { return }
+                    drawing = CloudDrawingRecognition.drawing(from: ai)
+                    recognitionSummary = "Google AIで解析しました。原図との照合が必要です。"
+                    message = ai.warnings.isEmpty ? "" : ai.warnings.joined(separator: "、")
+                    busy = false
+                    return
+                } catch {
+                    guard recognitionID == id else { return }
+                    message = "Google AIに接続できませんでした：\(error.localizedDescription)。端末内の読み取りで再試行します。"
+                }
+            } else {
+                message = "Google AIの接続先が未設定です。現在は端末内の読み取り結果です。"
+            }
             do {
                 let analysis = try await OfflineVision.analyze(image:normalized)
                 guard recognitionID == id else { return }
