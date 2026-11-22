@@ -2,22 +2,9 @@ import SwiftUI
 import WebKit
 import UniformTypeIdentifiers
 import UIKit
-import FirebaseCore
-import FirebaseAppCheck
-
-class SheetMasterAppCheckFactory: NSObject, AppCheckProviderFactory {
-    func createProvider(with app: FirebaseApp) -> AppCheckProvider? {
-        AppAttestProvider(app: app)
-    }
-}
 
 @main
 struct SheetMasterApp: App {
-    init() {
-        AppCheck.setAppCheckProviderFactory(SheetMasterAppCheckFactory())
-        FirebaseApp.configure()
-    }
-
     var body: some Scene {
         WindowGroup {
             WebContainer().ignoresSafeArea()
@@ -60,12 +47,7 @@ struct WebContainer: UIViewRepresentable {
       window.__sheetMasterNativeReply = (id, result, error) => {
         const p = pending.get(String(id)); if(!p) return;
         pending.delete(String(id));
-        if(error) {
-          // Detailed diagnosis is visible only on failure; original HTML/UI is unchanged.
-          const message = String(error.message || 'AI通信に失敗しました');
-          setTimeout(() => window.alert('SHEET MASTER / AI通信エラー\\n' + message), 0);
-          p.reject(Object.assign(new Error(message), {code:error.code || 'upstream_error'}));
-        }
+        if(error) p.reject(Object.assign(new Error(error.message || '失敗しました'), {code:error.code || 'upstream_error'}));
         else p.resolve(result);
       };
       window.claude = {
@@ -112,16 +94,27 @@ struct WebContainer: UIViewRepresentable {
                     vc.present(picker, animated: true)
                 } catch { reply(id: id, error: error.localizedDescription, code: "save_error") }
             case "analyze":
-                Task { @MainActor [weak self] in
-                    do {
-                        let result = try await DrawingGeminiBridge.analyze(payload: payload)
-                        self?.reply(id: id, result: result)
-                    } catch {
-                        let e = error as NSError
-                        let detail = "Firebase/AI: " + e.domain + " (" + String(e.code) + ") " + e.localizedDescription
-                        self?.reply(id: id, error: detail, code: "upstream_error")
-                    }
+                // No API keys are stored in the app. Configure a trusted HTTPS relay endpoint separately.
+                guard let endpoint = Bundle.main.object(forInfoDictionaryKey: "DrawingAnalysisEndpoint") as? String,
+                      let url = URL(string: endpoint), url.scheme == "https", !endpoint.isEmpty else {
+                    reply(id: id, error: "AI読み取り用サーバーが未設定です。HTML本体は変更していません。", code: "not_granted")
+                    return
                 }
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.timeoutInterval = 120
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                do {
+                    request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+                } catch { reply(id: id, error: "送信データを作成できません", code: "invalid_json"); return }
+                URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+                    if let error = error { self?.reply(id: id, error: error.localizedDescription, code: "upstream_error"); return }
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let data = data,
+                          let json = try? JSONSerialization.jsonObject(with: data), json is [String:Any] else {
+                        self?.reply(id: id, error: "読み取りサーバーから正しいJSONが返りませんでした", code: "invalid_json"); return
+                    }
+                    self?.reply(id: id, result: json)
+                }.resume()
             default: reply(id: id, error: "未対応の操作です", code: "unavailable")
             }
         }
