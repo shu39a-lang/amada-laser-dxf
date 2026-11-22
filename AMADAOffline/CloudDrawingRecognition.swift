@@ -83,29 +83,48 @@ enum CloudDrawingRecognition {
     }
 
     private static let drawingPrompt = """
-    You are reading a photographed Japanese manufacturing drawing.
-    Return a single valid JSON object, with no Markdown, in this exact format:
+    You are an expert at transcribing photographed Japanese sheet-metal engineering drawings.
+    Your task is to populate the dimensions table, NOT to describe the picture.
+    Work from the ORIGINAL drawing image and use OCR hints only to resolve tiny print.
+
+    Read in this order:
+    1. Identify the main front-view part outline. Read its overall horizontal and vertical
+       dimensions from extension/dimension lines, NOT from the image's pixel dimensions.
+    2. Read plate thickness (板厚, t, THK), material and chamfer (C).
+       Japanese title blocks often contain the thickness separately from the front view.
+    3. Locate each hole symbol in the front view and read callouts such as
+       4-φ10, 7-Φ6, Ø8, M3x0.5. The leading integer is a count, never an X coordinate.
+    4. Trace each hole's horizontal and vertical ordinate or chain dimensions to
+       the correct center. A dimension printed on a line far from the hole may
+       still refer to that hole via an extension line.
+    5. Convert chained dimensions to absolute X,Y ONLY when the origin and all
+       segments are explicit and unambiguous. Never infer values from pixel spacing.
+       X increases rightward, Y upward, both measured from the documented
+       lower-left part corner. If the drawing uses another datum, translate it only
+       if the change of datum is fully dimensioned.
+    6. Match each explicitly dimensioned diameter to its verifiable hole centers.
+       Include individually located holes even when their diameter is unknown:
+       set diameter:null. Do not create multiple rows just from the quantity note.
+       For an explicitly marked hole with known diameter but only one coordinate,
+       include x or y as null; do not fill missing values with guessed zeros.
+
+    Respond ONLY as JSON with exactly these keys:
     {"width":null,"height":null,"thickness":null,"chamfer":null,
-    "material":null,"drawing_number":null,
-    "holes":[],"warnings":[],"read_numbers":[]}
-    Lengths are in millimeters. X and Y must use a documented lower-left origin.
-    Only return numbers explicitly established by dimension lines or ordinate
-    coordinates AND the associated identifiable hole. Do not estimate pixels.
-    Detect and match diameter callouts to their holes; if a callout is shared by
-    multiple holes, count only those with verifiable centers.
-    Do not confuse diameter symbols, quantity, or thread with hole coordinates.
-    Unknown or ambiguous measurements MUST be null, never guessed.
-    When no center or diameter is identifiable, do not invent a hole.
-    All identifiable hole candidates must have x,y,diameter keys; max 150.
-    A valid ordinate zero (X=0 or Y=0) is allowed if explicitly marked.
-    The center coordinates and hole diameters must use the same millimeter units.
-    Also return read_numbers: an array of the exact dimension and hole callout texts
-    legible in the photographed drawing, in approximate page reading order.
-    Include Japanese warnings describing any uncertainty, missing axes or omitted holes.
-    Never generate cutting code, NC code, or machine operation instructions.
+     "material":null,"drawing_number":null,
+     "holes":[{"x":null,"y":null,"diameter":null}],
+     "warnings":[],"read_numbers":[]}
+
+    Values are millimeters and JSON numbers, not strings. Hole arrays may be empty
+    only when there are no identifiable holes. If any dimension or hole coordinate
+    is unreadable or ambiguous, leave THAT value null and explain it in Japanese
+    warnings; keep the other confidently readable measurements.
+    Return each visible measurement transcription in read_numbers.
+    Cross-check hole count against quantity callouts and call out discrepancies.
+    Never invent dimensions, infer scale from pixels, or create machine programs.
+    Limit hole entries to 150; only include visually identifiable hole candidates.
     """
 
-    static func analyze(_ photo: UIImage) async throws -> AIResult {
+    static func analyze(_ photo: UIImage, ocrHints: [String] = []) async throws -> AIResult {
         // Firebase AI Logic requires App Check verification; validate it first
         // to distinguish device attestation failures from model/API failures.
         // Never log or expose the token itself.
@@ -122,7 +141,13 @@ enum CloudDrawingRecognition {
                     responseMIMEType: "application/json"
                 )
             )
-        let response = try await model.generateContent(photo, drawingPrompt)
+        // Supply the dedicated OCR's transcriptions as reading aids, not as
+        // geometric ground truth. Limit both item count and text length.
+        let hints = ocrHints.prefix(160).map { String($0.prefix(80)) }
+        let instructions = hints.isEmpty ? drawingPrompt :
+            drawingPrompt + "\n\nOCR text hints (not ordered, may contain errors):\n" +
+            hints.joined(separator: "\n")
+        let response = try await model.generateContent(photo, instructions)
         guard let raw = response.text, !raw.isEmpty else {
             throw RecognitionError.invalidResponse
         }
