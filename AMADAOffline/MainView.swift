@@ -16,6 +16,7 @@ struct MainView: View {
     @State private var editing: EditTarget?
     @State private var input = ""
     @State private var error = ""
+    @State private var verifiedAgainstOriginal = false
 
     private enum EditTarget: Hashable, Identifiable {
         case width, height, thickness, chamfer, x(UUID), y(UUID), diameter(UUID)
@@ -66,7 +67,7 @@ struct MainView: View {
                             ShareLink(item: exportURL) { Text("DXFを保存・共有").frame(maxWidth: .infinity) }
                                 .buttonStyle(.borderedProminent)
                         } else {
-                            Button { createDXF() } label: { Text("この内容でDXFを作る").frame(maxWidth: .infinity) }
+                            Button { createDXF() } label: { Text("確認済みDXFを作る").frame(maxWidth: .infinity) }
                                 .buttonStyle(.borderedProminent).disabled(busy)
                         }
                     }.controlSize(.large).padding(.horizontal).padding(.vertical, 8)
@@ -137,6 +138,10 @@ struct MainView: View {
             }
             Text("オレンジは要確認。数字を押すと修正できます。").font(.caption).foregroundStyle(.secondary)
             if !drawing.notes.isEmpty { Text(drawing.notes).font(.caption).foregroundStyle(.secondary) }
+            Toggle("原図と全寸法・穴数・穴位置を照合しました", isOn: $verifiedAgainstOriginal)
+                .font(.subheadline).tint(.yellow)
+            Text("DXFはCAD/CAMへの受け渡し用です。機械のNCコードは生成しません。加工前に現場で必ず再確認してください。")
+                .font(.caption).foregroundStyle(.orange)
             if let photo {
                 DisclosureGroup("元の図面", isExpanded:$previewOriginal) { Image(uiImage:photo).resizable().scaledToFit() }
             }
@@ -164,7 +169,7 @@ struct MainView: View {
     private func edit(_ target:EditTarget,value:Double) {
         input = value.formatted(.number.grouping(.never)); error = ""; editing = target
     }
-    private func changed() { exportURL = nil; message = "" }
+    private func changed() { exportURL = nil; message = ""; verifiedAgainstOriginal = false; drawing.verified = false }
     private func save(_ target:EditTarget) {
         let s = input.precomposedStringWithCompatibilityMapping.replacingOccurrences(of:",",with:".")
         guard let v = Double(s), v.isFinite, v >= 0 else { error = "0以上の数値を入力してください"; return }
@@ -183,9 +188,14 @@ struct MainView: View {
     }
 
     private func createDXF() {
-        guard drawing.geometryIssues.isEmpty else { message = drawing.geometryIssues.joined(separator:"、"); return }
+        guard verifiedAgainstOriginal else {
+            message = "原図と全寸法・穴の位置を照合し、確認欄にチェックを入れてください"
+            return
+        }
+        guard drawing.issues.isEmpty else { message = drawing.issues.joined(separator:"、"); return }
         do {
-            let data = try DXF.preview(drawing)
+            drawing.verified = true
+            let data = try DXF.generate(drawing)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("drawing_\(UUID().uuidString.prefix(8)).dxf")
             try data.write(to:url,options:.atomic)
             exportURL = url
@@ -210,6 +220,7 @@ struct MainView: View {
         message = ""
         exportURL = nil
         previewOriginal = false
+        verifiedAgainstOriginal = false
         showingResult = true
         busy = true
         let id = recognitionID
