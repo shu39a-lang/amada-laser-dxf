@@ -1,10 +1,9 @@
 import Foundation
 import UIKit
-import FirebaseAppCheck
+import FirebaseAILogic
 
-// This client sends a drawing only to the configured SHEET MASTER backend.
-// The backend validates Firebase App Check before calling Vertex AI.
-// No Google API secrets are embedded in this application.
+// Firebase AI Logic sends images to Gemini through Google's protected Firebase proxy.
+// No Google AI API secret or custom Cloud Run endpoint is stored in this app.
 enum CloudDrawingRecognition {
     struct AIHole: Decodable {
         let x: Double?
@@ -16,75 +15,78 @@ enum CloudDrawingRecognition {
         let height: Double?
         let thickness: Double?
         let chamfer: Double?
-        let material: String
-        let drawing_number: String
-        let holes: [AIHole]
-        let warnings: [String]
-        let verified: Bool
+        let material: String?
+        let drawing_number: String?
+        let holes: [AIHole]?
+        let warnings: [String]?
     }
     enum RecognitionError: LocalizedError {
-        case missingEndpoint
         case invalidResponse
-        case httpStatus(Int)
         var errorDescription: String? {
-            switch self {
-            case .missingEndpoint: return "Google AI接続先はまだ設定されていません"
-            case .invalidResponse: return "Google AIから正しい読み取り結果を受信できませんでした"
-            case .httpStatus(let code): return "Google AIの接続エラー（\(code)）"
-            }
+            "Google AIの結果を解析できませんでした"
         }
     }
-    static var isConfigured: Bool {
-        endpoint != nil
-    }
-    private static var endpoint: URL? {
-        guard let string = Bundle.main.object(forInfoDictionaryKey: "SHEET_MASTER_API_URL") as? String,
-              !string.isEmpty, let url = URL(string: string),
-              url.scheme == "https", url.host != nil else { return nil }
-        return url
-    }
+    static let isConfigured = true
+
+    private static let drawingPrompt = """
+    You are reading a photographed Japanese manufacturing drawing.
+    Return a single valid JSON object, with no Markdown, in this exact format:
+    {"width":null,"height":null,"thickness":null,"chamfer":null,
+    "material":null,"drawing_number":null,
+    "holes":[{"x":null,"y":null,"diameter":null}],"warnings":[]}
+    Lengths are in millimeters. X and Y must use a documented lower-left origin.
+    Only return numbers explicitly established by dimension lines or ordinate
+    coordinates AND the associated identifiable hole. Do not estimate pixels.
+    Detect and match diameter callouts to their holes; if a callout is shared by
+    multiple holes, count only those with verifiable centers.
+    Do not confuse diameter symbols, quantity, or thread with hole coordinates.
+    Unknown or ambiguous measurements MUST be null, never guessed.
+    All holes must have x,y,diameter keys; max 150.
+    Include Japanese warnings describing any uncertainty, missing axes or omitted holes.
+    Never generate cutting code, NC code, or machine operation instructions.
+    """
+
     static func analyze(_ photo: UIImage) async throws -> AIResult {
-        guard let base = endpoint else { throw RecognitionError.missingEndpoint }
-        guard let data = photo.jpegData(compressionQuality: 0.85), data.count <= 8_000_000 else {
+        let model = FirebaseAI.firebaseAI(backend: .googleAI())
+            .generativeModel(modelName: "gemini-3.8-flash")
+        let response = try await model.generateContent(photo, drawingPrompt)
+        guard let raw = response.text, !raw.isEmpty else {
             throw RecognitionError.invalidResponse
         }
-        let token = try await AppCheck.appCheck().token(forcingRefresh: false)
-        let payload: [String: String] = [
-            "image_base64": data.base64EncodedString(),
-            "mime_type": "image/jpeg"
-        ]
-        var request = URLRequest(url: base.appendingPathComponent("recognize"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(token.token, forHTTPHeaderField: "X-Firebase-AppCheck")
-        request.httpBody = try JSONEncoder().encode(payload)
-        request.timeoutInterval = 45
-        let (responseData, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw RecognitionError.invalidResponse }
-        guard http.statusCode == 200 else { throw RecognitionError.httpStatus(http.statusCode) }
-        return try JSONDecoder().decode(AIResult.self, from: responseData)
+        // Some model versions wrap JSON in Markdown fences.
+        let cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let json: String
+        if let start = cleaned.firstIndex(of: "{"),
+           let end = cleaned.lastIndex(of: "}"), start <= end {
+            json = String(cleaned[start...end])
+        } else {
+            throw RecognitionError.invalidResponse
+        }
+        guard let data = json.data(using: .utf8) else {
+            throw RecognitionError.invalidResponse
+        }
+        return try JSONDecoder().decode(AIResult.self, from: data)
     }
     static func drawing(from ai: AIResult) -> Drawing {
-        var result = Drawing()
-        // Nulls remain empty: never turn an uncertain AI answer into a manufacturing dimension.
-        result.width = valid(ai.width)
-        result.height = valid(ai.height)
-        result.thickness = valid(ai.thickness)
-        result.chamfer = valid(ai.chamfer)
-        result.material = ai.material
-        result.drawingNumber = ai.drawing_number
-        result.notes = ai.warnings.joined(separator: "\n")
-        result.holes = ai.holes.prefix(150).map { hole in
-            Hole(x: valid(hole.x), y: valid(hole.y),
-                 xSuggested: hole.x == nil, ySuggested: hole.y == nil,
-                 diameterSuggested: hole.diameter == nil,
-                 diameter: valid(hole.diameter))
+        var d = Drawing()
+        d.width = checked(ai.width)
+        d.height = checked(ai.height)
+        d.thickness = checked(ai.thickness)
+        d.chamfer = checked(ai.chamfer)
+        d.material = ai.material ?? ""
+        d.drawingNumber = ai.drawing_number ?? ""
+        d.notes = (ai.warnings ?? []).prefix(20).joined(separator: "\n")
+        d.holes = (ai.holes ?? []).prefix(150).map { h in
+            Hole(x: checked(h.x), y: checked(h.y),
+                 xSuggested: h.x == nil, ySuggested: h.y == nil,
+                 diameterSuggested: h.diameter == nil,
+                 diameter: checked(h.diameter))
         }
-        result.verified = false
-        return result
+        d.verified = false
+        return d
     }
-    private static func valid(_ value: Double?) -> Double {
-        guard let value, value.isFinite, value >= 0, value <= 100000 else { return 0 }
-        return value
+    private static func checked(_ n: Double?) -> Double {
+        guard let n, n.isFinite, n > 0, n <= 100000 else { return 0 }
+        return n
     }
 }
