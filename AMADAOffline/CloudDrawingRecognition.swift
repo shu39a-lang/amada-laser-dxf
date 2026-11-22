@@ -36,7 +36,17 @@ enum CloudDrawingRecognition {
         }
         return try JSONDecoder().decode(Response.self, from: body).words.compactMap { word in
             let b = word.box
-            guard !word.text.isEmpty, word.confidence >= 0.65, word.confidence <= 1,
+            // Tiny, rotated dimension labels often score below 0.65. Preserve
+            // plausible low-confidence measurements for geometric matching and
+            // Gemini's visual cross-check; never promote them to verified values.
+            let token = word.text.precomposedStringWithCompatibilityMapping
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let isDimensionText = token.range(
+                of: #"(?i)[0-9]|[φΦØø⌀]|板厚|THK|厚さ|^C[0-9]"#,
+                options: .regularExpression
+            ) != nil
+            let minimumConfidence: Float = isDimensionText ? 0.30 : 0.65
+            guard !token.isEmpty, word.confidence >= minimumConfidence, word.confidence <= 1,
                   b.count == 4, b.allSatisfy({ (0...1).contains($0) }),
                   b[2] > b[0], b[3] > b[1] else { return nil }
             let box = CGRect(x: b[0], y: 1 - b[3], width: b[2] - b[0], height: b[3] - b[1])
