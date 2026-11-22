@@ -5,7 +5,7 @@
  objectVersion = 56;
  objects = {
   A00000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600; TargetAttributes = {A00000000000000000000002 = {CreatedOnToolsVersion = 16.0; }; }; }; buildConfigurationList = A00000000000000000000020; compatibilityVersion = "Xcode 14.0"; developmentRegion = ja; hasScannedForEncodings = 0; knownRegions = (ja, en, Base); mainGroup = A00000000000000000000003; productRefGroup = A00000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000002,); packageReferences = (A00000000000000000000070,); };
-  A00000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000021; buildPhases = (A00000000000000000000005,A00000000000000000000007,A00000000000000000000075); packageProductDependencies = (A00000000000000000000071,A00000000000000000000072); buildRules = (); dependencies = (); name = AMADAOffline; productName = AMADAOffline; productReference = A00000000000000000000009; productType = "com.apple.product-type.application"; };
+  A00000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000021; buildPhases = (A00000000000000000000005,A00000000000000000000007,A00000000000000000000075); packageProductDependencies = (A00000000000000000000071,A00000000000000000000072,A00000000000000000000076); buildRules = (); dependencies = (); name = AMADAOffline; productName = AMADAOffline; productReference = A00000000000000000000009; productType = "com.apple.product-type.application"; };
   A00000000000000000000003 = {isa = PBXGroup; children = (A00000000000000000000006,A00000000000000000000004); sourceTree = "<group>"; };
   A00000000000000000000004 = {isa = PBXGroup; children = (A00000000000000000000009,); name = Products; sourceTree = "<group>"; };
   A00000000000000000000006 = {isa = PBXGroup; children = (A00000000000000000000010,A00000000000000000000011,A00000000000000000000012,A00000000000000000000013,A00000000000000000000014,A00000000000000000000015,A00000000000000000000016,A00000000000000000000017,A00000000000000000000018,A00000000000000000000019,A0000000000000000000001A); path = AMADAOffline; sourceTree = "<group>"; };
@@ -27,6 +27,7 @@
   A00000000000000000000039 = {isa = PBXBuildFile; fileRef = A00000000000000000000019; };
   A00000000000000000000073 = {isa = PBXBuildFile; productRef = A00000000000000000000071; };
   A00000000000000000000074 = {isa = PBXBuildFile; productRef = A00000000000000000000072; };
+  A00000000000000000000077 = {isa = PBXBuildFile; productRef = A00000000000000000000076; };
   A00000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000036,A00000000000000000000037,A00000000000000000000038); runOnlyForDeploymentPostprocessing = 0; };
   A00000000000000000000030 = {isa = PBXBuildFile; fileRef = A00000000000000000000010; };
   A00000000000000000000031 = {isa = PBXBuildFile; fileRef = A00000000000000000000011; };
@@ -35,10 +36,11 @@
   A00000000000000000000034 = {isa = PBXBuildFile; fileRef = A00000000000000000000014; };
   A00000000000000000000035 = {isa = PBXBuildFile; fileRef = A00000000000000000000015; };
   A00000000000000000000005 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000030,A00000000000000000000031,A00000000000000000000032,A00000000000000000000033,A00000000000000000000034,A00000000000000000000035,A00000000000000000000039); runOnlyForDeploymentPostprocessing = 0; };
-  A00000000000000000000075 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000073,A00000000000000000000074); runOnlyForDeploymentPostprocessing = 0; };
+  A00000000000000000000075 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000073,A00000000000000000000074,A00000000000000000000077); runOnlyForDeploymentPostprocessing = 0; };
   A00000000000000000000070 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/firebase/firebase-ios-sdk"; requirement = {kind = upToNextMajorVersion; minimumVersion = 12.0.0; }; };
   A00000000000000000000071 = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000070; productName = FirebaseCore; };
   A00000000000000000000072 = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000070; productName = FirebaseAppCheck; };
+  A00000000000000000000076 = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000070; productName = FirebaseAILogic; };
   A00000000000000000000020 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000040,A00000000000000000000041); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
   A00000000000000000000021 = {isa = XCConfigurationList; buildConfigurations = (A00000000000000000000042,A00000000000000000000043); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
   A00000000000000000000040 = {isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; }; name = Debug; };
