@@ -14,7 +14,32 @@ enum OfflineVision {
     }
     #endif
 
-    static func analyze(cgImage: CGImage) async throws -> RecognitionResult {
+    // Use one flat page for both OCR providers so their boxes and contour coordinates agree.
+    static func flattenPage(_ image: CGImage) -> CGImage {
+        let page = VNDetectRectanglesRequest()
+        page.maximumObservations = 4
+        page.minimumSize = 0.55
+        page.minimumAspectRatio = 0.45
+        page.minimumConfidence = 0.7
+        try? VNImageRequestHandler(cgImage: image, options: [:]).perform([page])
+        let sheets = (page.results ?? []).filter {
+            $0.boundingBox.width * $0.boundingBox.height > 0.55
+        }
+        guard let sheet = sheets.max(by: {
+            $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
+        }) else { return image }
+        let source = CIImage(cgImage: image)
+        func vector(_ point: CGPoint) -> CIVector {
+            CIVector(x: point.x * source.extent.width, y: point.y * source.extent.height)
+        }
+        let flat = source.applyingFilter("CIPerspectiveCorrection", parameters: [
+            "inputTopLeft": vector(sheet.topLeft), "inputTopRight": vector(sheet.topRight),
+            "inputBottomLeft": vector(sheet.bottomLeft), "inputBottomRight": vector(sheet.bottomRight)
+        ])
+        return CIContext(options: [.cacheIntermediates: false]).createCGImage(flat, from: flat.extent) ?? image
+    }
+
+    static func analyze(cgImage: CGImage, cloudWords: [OCRCandidate] = []) async throws -> RecognitionResult {
         return try await Task.detached(priority: .userInitiated) {
             let text = VNRecognizeTextRequest()
             text.recognitionLevel = .accurate
@@ -25,7 +50,7 @@ enum OfflineVision {
             #if os(macOS)
             text.usesCPUOnly = true
             #endif
-            try handler.perform([text])
+            if cloudWords.isEmpty { try handler.perform([text]) } else { try? handler.perform([text]) }
             var candidates: [OCRCandidate] = (text.results ?? []).compactMap { item in
                 guard let top = item.topCandidates(1).first else { return nil }
                 return OCRCandidate(text: top.string, confidence: top.confidence, rectangle: item.boundingBox)
@@ -98,6 +123,11 @@ enum OfflineVision {
                         }
                     }
                 }
+            }
+            for word in cloudWords where !candidates.contains(where: {
+                $0.text == word.text && $0.rectangle.intersects(word.rectangle) && $0.confidence >= word.confidence
+            }) {
+                candidates.append(word)
             }
             return geometry(cgImage: cgImage, candidates: candidates)
         }.value
@@ -302,7 +332,8 @@ private enum OrdinateReader {
                   let v = Double(s) else { return nil }
             return Mark(value: v, box: $0.rectangle)
         }
-        guard let x = axis(marks, horizontal: true), let y = axis(marks, horizontal: false) else { return nil }
+        let horizontalAxis = axis(marks, horizontal: true)
+        let verticalAxis = axis(marks, horizontal: false)
         // An independent overall dimension must repeat the last ordinate.
         func corroborated(_ a: Axis, horizontal: Bool) -> Bool {
             guard let first = a.marks.first else { return false }
@@ -310,6 +341,12 @@ private enum OrdinateReader {
                 m.value == a.extent && abs(m.across(horizontal)-first.across(horizontal)) > 0.045 &&
                 abs(m.along(horizontal)-(a.zero+a.scale*a.extent*0.5)) < a.scale*a.extent*0.32
             }
+        }
+        guard let x = horizontalAxis, let y = verticalAxis else {
+            var partial = Drawing()
+            if let x = horizontalAxis, corroborated(x, horizontal: true) { partial.width = x.extent }
+            if let y = verticalAxis, corroborated(y, horizontal: false) { partial.height = y.extent }
+            return partial.width > 0 || partial.height > 0 ? partial : nil
         }
         let outlineRepeated = corroborated(x,horizontal:true) && corroborated(y,horizontal:false)
         var draft = Drawing()
@@ -331,9 +368,41 @@ private enum OrdinateReader {
         if thicknesses.count == 1 { draft.thickness = thicknesses.first ?? 0 }
         let pattern = #"^(?:(\d{1,2})[-‐‑–—−×])?([φΦØø⌀Mm])(\d+(?:\.\d+)?)(?:[xX×](\d+(?:\.\d+)?))?$"#
         guard let re = try? NSRegularExpression(pattern: pattern) else { return draft }
+        // Cloud Vision can return "2", "-", "φ", "6.5" as four separate words.
+        // Reassemble only complete counted callouts on one baseline with tight gaps.
+        let ordered = labels.sorted { $0.rectangle.minX < $1.rectangle.minX }
+        var joined: [OCRCandidate] = []
+        for first in ordered {
+            let prefix = clean(first.text)
+            guard prefix.range(of: #"^\d{1,2}(?:[-‐‑–—−×][φΦØø⌀Mm]?)?$"#, options: .regularExpression) != nil else { continue }
+            var box = first.rectangle
+            var token = prefix
+            var confidence = first.confidence
+            for _ in 0..<8 {
+                let h = first.rectangle.height
+                guard let next = ordered.first(where: {
+                    $0.rectangle.midX > box.maxX && $0.rectangle.minX >= box.maxX - h*0.18 &&
+                    $0.rectangle.minX - box.maxX <= h*0.85 &&
+                    abs($0.rectangle.midY - first.rectangle.midY) < h*0.55
+                }) else { break }
+                let piece = clean(next.text)
+                guard piece.range(of: #"^[-‐‑–—−×φΦØø⌀MmXx.0-9]+$"#, options: .regularExpression) != nil else { break }
+                token += piece
+                box = box.union(next.rectangle)
+                confidence = min(confidence, next.confidence)
+                if token.range(of: #"^\d{1,2}[-‐‑–—−×]"#, options: .regularExpression) != nil,
+                   re.firstMatch(in: token, range: NSRange(token.startIndex..., in: token)) != nil {
+                    joined.append(OCRCandidate(text: token, confidence: confidence, rectangle: box))
+                }
+            }
+        }
+        let complete = joined.filter { short in !joined.contains { long in
+            long.text.count > short.text.count && long.rectangle.contains(short.rectangle)
+        } }
+        let standalone = labels.filter { word in !complete.contains { $0.rectangle.contains(word.rectangle) } }
         var groups: [Callout] = []
         var groupBoxes: [CGRect] = []
-        for label in labels {
+        for label in complete + standalone {
             let original = clean(label.text)
             // OCR may read the crossed diameter glyph as zero after a quantity.
             // Keep this substitution confined to counted callouts backed by a measured ring.
