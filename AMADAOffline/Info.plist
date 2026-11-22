@@ -24,8 +24,6 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>SHEET_MASTER_API_URL</key>
-	<string></string>
 	<key>NSCameraUsageDescription</key>
 	<string>加工図面を撮影し寸法や穴位置を確認するためにカメラを使用します。</string>
 	<key>UILaunchScreen</key>
