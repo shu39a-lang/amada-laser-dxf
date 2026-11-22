@@ -35,6 +35,8 @@ jobs:
           assert 'CloudDrawingRecognition.read(normalized)' in view
           assert 'OfflineVision.analyze(image:normalized)' not in view
           assert 'X-Firebase-AppCheck' in cloud and '/v1/ocr' in cloud
+          assert 'FirebaseAI.firebaseAI' in cloud and 'static func analyze(_ photo:' in cloud
+          assert 'CloudDrawingRecognition.analyze(normalized)' in view
           assert 'OfflineVision.geometry(cgImage: raster, candidates: words)' in view
           assert 'FirebaseApp.configure()' in app
           assert 'FirebaseAILogic' in project and 'FirebaseAppCheck' in project
