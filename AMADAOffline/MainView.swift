@@ -318,6 +318,37 @@ struct MainView: View {
                 detectedText = words.map(\.text)
                 message = result.diagnostics
 
+                // Independent on-device OCR reads faint and rotated dimension labels
+                // differently from Cloud Vision. Run it only when cloud geometry is
+                // incomplete, and use it only if the resulting dimensional geometry
+                // is more complete. This does not mark anything as verified.
+                if drawing.holes.isEmpty || drawing.width <= 0 || drawing.height <= 0 {
+                    if let local = try? await OfflineVision.analyze(cgImage: raster) {
+                        guard recognitionID == id else { return }
+                        if let localDrawing = local.ordinateDrawing {
+                            let cloudScore = drawing.holes.count * 3 +
+                                (drawing.width > 0 ? 1 : 0) + (drawing.height > 0 ? 1 : 0)
+                            let localScore = localDrawing.holes.count * 3 +
+                                (localDrawing.width > 0 ? 1 : 0) + (localDrawing.height > 0 ? 1 : 0)
+                            if localScore > cloudScore &&
+                                localDrawing.geometryIssues.isEmpty {
+                                drawing.width = localDrawing.width
+                                drawing.height = localDrawing.height
+                                drawing.holes = localDrawing.holes
+                                if drawing.thickness <= 0 {
+                                    drawing.thickness = localDrawing.thickness
+                                }
+                                message += "\n端末内の再解析で寸法・穴候補を補完しました。"
+                            }
+                        }
+                        // Show both OCR sources for transparent comparison.
+                        for item in local.candidates where
+                            !detectedText.contains(item.text) && detectedText.count < 300 {
+                            detectedText.append(item.text)
+                        }
+                    }
+                }
+
                 // OCR returning words only proves text detection, not dimension parsing.
                 // The former implementation stopped here even when all measured values
                 // and holes were absent, leaving the user with an unusable blank drawing.
