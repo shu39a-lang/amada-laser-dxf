@@ -316,8 +316,44 @@ struct MainView: View {
                     }
                 }
                 detectedText = words.map(\.text)
-                recognitionSummary = "Google OCRで文字を\(words.count)件読み取りました。元の図面で寸法を照合してください。"
                 message = result.diagnostics
+
+                // OCR returning words only proves text detection, not dimension parsing.
+                // The former implementation stopped here even when all measured values
+                // and holes were absent, leaving the user with an unusable blank drawing.
+                let needsAI = drawing.holes.isEmpty || drawing.width <= 0 ||
+                    drawing.height <= 0 || drawing.thickness <= 0
+                if needsAI {
+                    recognitionSummary = "OCRで\(words.count)件読み取りました。図面の数値をAIで再解析中…"
+                    do {
+                        let ai = try await CloudDrawingRecognition.analyze(normalized)
+                        guard recognitionID == id else { return }
+                        let candidate = CloudDrawingRecognition.drawing(from: ai)
+                        // Prefer measured geometric readings. AI values are provisional
+                        // and always require comparison against the original drawing.
+                        if drawing.width <= 0 { drawing.width = candidate.width }
+                        if drawing.height <= 0 { drawing.height = candidate.height }
+                        if drawing.thickness <= 0 { drawing.thickness = candidate.thickness }
+                        if drawing.chamfer <= 0 { drawing.chamfer = candidate.chamfer }
+                        if drawing.material.isEmpty { drawing.material = candidate.material }
+                        if drawing.drawingNumber.isEmpty { drawing.drawingNumber = candidate.drawingNumber }
+                        if drawing.holes.isEmpty { drawing.holes = candidate.holes }
+                        if !candidate.notes.isEmpty {
+                            drawing.notes += (drawing.notes.isEmpty ? "" : "\n") + candidate.notes
+                        }
+                        if drawing.holes.isEmpty && drawing.width <= 0 && drawing.height <= 0 {
+                            recognitionSummary = "文字\(words.count)件を検出しましたが、寸法・穴位置は特定できませんでした"
+                        } else {
+                            recognitionSummary = "OCR \(words.count)件＋AI図面解析：穴\(drawing.holes.count)件（原図との照合が必要）"
+                        }
+                    } catch {
+                        guard recognitionID == id else { return }
+                        recognitionSummary = "文字\(words.count)件を検出。図面解析AIは失敗しました"
+                        message += "\n図面解析AI: \(error.localizedDescription)"
+                    }
+                } else {
+                    recognitionSummary = "Google OCRで文字を\(words.count)件読み取りました。元の図面で寸法を照合してください。"
+                }
             } catch {
                 guard recognitionID == id else { return }
                 let ocrError = error.localizedDescription
