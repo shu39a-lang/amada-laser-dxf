@@ -44,9 +44,9 @@ workflows:
       - name: Build IPA
         script: |
           set -o pipefail
-          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME" 2>&1 | tee /tmp/sheet-master-archive.log || {
+          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME" --disable-xcpretty -v 2>&1 | tee /tmp/sheet-master-archive.log || {
             echo '=== SHEET MASTER ARCHIVE ERRORS ==='
-            grep -nEi 'error:|fatal error:|provision|entitlement|signing|Failed to archive' /tmp/sheet-master-archive.log | tail -n 80 || true
+            grep -nEi 'error:|fatal error:|provision|entitlement|signing|failed|requires a|doesn.t include|not found' /tmp/sheet-master-archive.log | tail -n 100 || true
             exit 1
           }
     artifacts:
