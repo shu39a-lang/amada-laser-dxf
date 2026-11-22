@@ -26,7 +26,6 @@ enum CloudDrawingRecognition {
             "Google AIの結果を解析できませんでした"
         }
     }
-    static let isConfigured = true
 
     private static let drawingPrompt = """
     You are reading a photographed Japanese manufacturing drawing.
