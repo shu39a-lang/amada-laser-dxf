@@ -3,6 +3,8 @@ import PhotosUI
 import UIKit
 
 struct MainView: View {
+    private let masterRed = Color(red: 0.38, green: 0.045, blue: 0.068)
+    private let masterYellow = Color(red: 1, green: 0.82, blue: 0.13)
     @State private var selected: PhotosPickerItem?
     @State private var cameraShown = false
     @State private var photo: UIImage?
@@ -41,22 +43,33 @@ struct MainView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text(showingResult ? "② 読み取り結果" : "① 図面を取り込む")
-                            .font(.title2.bold())
+                        Text("SHEET MASTER").font(.system(size: 29, weight: .black, design: .rounded))
+                        Text(showingResult ? "② 図面の数値を確認" : "① 図面を撮影・選択")
+                            .font(.title2.bold()).foregroundStyle(masterYellow)
                         if showingResult {
                             if busy { ProgressView("図面を読み取り中…").frame(maxWidth: .infinity, minHeight: 160) }
                             else { result }
                         } else {
-                            if let photo { Image(uiImage: photo).resizable().scaledToFit().frame(maxHeight: 260) }
+                            if let photo {
+                                Image(uiImage: photo).resizable().scaledToFit().frame(maxHeight: 220)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                            } else {
+                                VStack(spacing: 10) {
+                                    Image(systemName: "doc.viewfinder").font(.system(size: 44))
+                                    Text("図面を撮影するか、写真から選んでください").font(.subheadline)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 165)
+                                .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+                            }
                             Button { cameraShown = true } label: {
                                 Label("図面を撮影する", systemImage: "camera")
                                     .frame(maxWidth: .infinity, minHeight: 44)
-                            }.buttonStyle(.borderedProminent).disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+                            }.buttonStyle(MasterYellowButton()).disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
                             PhotosPicker(selection: $selected, matching: .images) {
-                                Label("写真から選ぶ", systemImage: "photo").frame(maxWidth: .infinity, minHeight: 44)
-                            }.buttonStyle(.bordered)
+                                Label("写真から選ぶ", systemImage: "photo").frame(maxWidth: .infinity, minHeight: 52)
+                            }.buttonStyle(MasterYellowButton())
                             if photo != nil {
-                                Button("読み取り結果を表示") { showingResult = true }
+                                Button("読み取り結果を表示") { showingResult = true }.buttonStyle(MasterYellowButton())
                             }
                         }
                         if !message.isEmpty { Text(message).font(.footnote).foregroundStyle(.secondary) }
@@ -67,15 +80,15 @@ struct MainView: View {
                         Button("戻る") { showingResult = false }.buttonStyle(.bordered)
                         if let exportURL {
                             ShareLink(item: exportURL) { Text("DXFを保存・共有").frame(maxWidth: .infinity) }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(MasterYellowButton())
                         } else {
                             Button { createDXF() } label: { Text("確認済みDXFを作る").frame(maxWidth: .infinity) }
-                                .buttonStyle(.borderedProminent).disabled(busy)
+                                .buttonStyle(MasterYellowButton()).disabled(busy)
                         }
                     }.controlSize(.large).padding(.horizontal).padding(.vertical, 8)
                 }
             }
-            .background(Color(white: 0.08).ignoresSafeArea()).preferredColorScheme(.dark)
+            .background(masterRed.ignoresSafeArea()).tint(masterYellow).preferredColorScheme(.dark)
             .sheet(isPresented: $cameraShown) { CameraView { image in loadPhoto(image) }.ignoresSafeArea() }
             .sheet(item: $editing) { target in
                 VStack(alignment: .leading, spacing: 16) {
@@ -394,4 +407,15 @@ private struct DetectedDrawingField: Identifiable {
     let value: String
     let source: String
     let sourceID: UUID
+}
+
+private struct MasterYellowButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(Color.black)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .padding(.horizontal, 10)
+            .background(Color(red: 1, green: 0.82, blue: 0.13).opacity(configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 12))
+    }
 }
