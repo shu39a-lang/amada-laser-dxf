@@ -8,7 +8,7 @@
   A00000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000021; buildPhases = (A00000000000000000000005,A00000000000000000000007,); buildRules = (); dependencies = (); name = AMADAOffline; productName = AMADAOffline; productReference = A00000000000000000000009; productType = "com.apple.product-type.application"; };
   A00000000000000000000003 = {isa = PBXGroup; children = (A00000000000000000000006,A00000000000000000000004); sourceTree = "<group>"; };
   A00000000000000000000004 = {isa = PBXGroup; children = (A00000000000000000000009,); name = Products; sourceTree = "<group>"; };
-  A00000000000000000000006 = {isa = PBXGroup; children = (A00000000000000000000010,A00000000000000000000011,A00000000000000000000012,A00000000000000000000013,A00000000000000000000014,A00000000000000000000015,A00000000000000000000016,A00000000000000000000017); path = AMADAOffline; sourceTree = "<group>"; };
+  A00000000000000000000006 = {isa = PBXGroup; children = (A00000000000000000000010,A00000000000000000000011,A00000000000000000000012,A00000000000000000000013,A00000000000000000000014,A00000000000000000000015,A00000000000000000000016,A00000000000000000000017,A00000000000000000000018); path = AMADAOffline; sourceTree = "<group>"; };
   A00000000000000000000009 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AMADAOffline.app; sourceTree = BUILT_PRODUCTS_DIR; };
   A00000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AMADAOfflineApp.swift; sourceTree = "<group>"; };
   A00000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -18,9 +18,11 @@
   A00000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
   A00000000000000000000016 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
   A00000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+  A00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
   A00000000000000000000036 = {isa = PBXBuildFile; fileRef = A00000000000000000000016; };
   A00000000000000000000037 = {isa = PBXBuildFile; fileRef = A00000000000000000000017; };
-  A00000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000036,A00000000000000000000037); runOnlyForDeploymentPostprocessing = 0; };
+  A00000000000000000000038 = {isa = PBXBuildFile; fileRef = A00000000000000000000018; };
+  A00000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000036,A00000000000000000000037,A00000000000000000000038); runOnlyForDeploymentPostprocessing = 0; };
   A00000000000000000000030 = {isa = PBXBuildFile; fileRef = A00000000000000000000010; };
   A00000000000000000000031 = {isa = PBXBuildFile; fileRef = A00000000000000000000011; };
   A00000000000000000000032 = {isa = PBXBuildFile; fileRef = A00000000000000000000012; };
