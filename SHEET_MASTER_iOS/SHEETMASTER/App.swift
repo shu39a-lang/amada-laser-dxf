@@ -60,7 +60,12 @@ struct WebContainer: UIViewRepresentable {
       window.__sheetMasterNativeReply = (id, result, error) => {
         const p = pending.get(String(id)); if(!p) return;
         pending.delete(String(id));
-        if(error) p.reject(Object.assign(new Error(error.message || '失敗しました'), {code:error.code || 'upstream_error'}));
+        if(error) {
+          // Detailed diagnosis is visible only on failure; original HTML/UI is unchanged.
+          const message = String(error.message || 'AI通信に失敗しました');
+          setTimeout(() => window.alert('SHEET MASTER / AI通信エラー\\n' + message), 0);
+          p.reject(Object.assign(new Error(message), {code:error.code || 'upstream_error'}));
+        }
         else p.resolve(result);
       };
       window.claude = {
@@ -112,7 +117,9 @@ struct WebContainer: UIViewRepresentable {
                         let result = try await DrawingGeminiBridge.analyze(payload: payload)
                         self?.reply(id: id, result: result)
                     } catch {
-                        self?.reply(id: id, error: error.localizedDescription, code: "upstream_error")
+                        let e = error as NSError
+                        let detail = "Firebase/AI: " + e.domain + " (" + String(e.code) + ") " + e.localizedDescription
+                        self?.reply(id: id, error: detail, code: "upstream_error")
                     }
                 }
             default: reply(id: id, error: "未対応の操作です", code: "unavailable")
