@@ -27,6 +27,14 @@ workflows:
           printf '%s  %s\n' '1f4d4313772e446106e939aa1c3266e8e8d11eb6f8b3ec542dfdc0a7e43ea71d' 'SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html' | shasum -a 256 -c -
           plutil -lint "$XCODE_PROJECT/project.pbxproj" "SHEET_MASTER_iOS/SHEETMASTER/Info.plist"
           xcodebuild -list -project "$XCODE_PROJECT"
+      - name: Require a configured Claude HTTPS endpoint
+        script: |
+          set -euo pipefail
+          ENDPOINT=$(/usr/libexec/PlistBuddy -c 'Print :DrawingAnalysisEndpoint' "$CM_BUILD_DIR/SHEET_MASTER_iOS/SHEETMASTER/Info.plist")
+          if [[ ! "$ENDPOINT" == https://*"/v1/analyze" ]]; then
+            echo "Claude API relay URL not configured. Refusing to publish a broken photo-reading app."
+            exit 1
+          fi
       - name: Set unique TestFlight build number
         script: |
           set -euo pipefail
