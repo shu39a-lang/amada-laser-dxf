@@ -112,8 +112,8 @@ struct MainView: View {
                     }.font(.caption).foregroundStyle(.secondary)
                     ForEach(drawing.holes) { hole in
                         GridRow {
-                            cell(hole.x, .x(hole.id), warn: hole.positionSuggested == true)
-                            cell(hole.y, .y(hole.id), warn: hole.positionSuggested == true)
+                            cell(hole.x, .x(hole.id), warn: hole.xSuggested == true)
+                            cell(hole.y, .y(hole.id), warn: hole.ySuggested == true)
                             cell(hole.diameter, .diameter(hole.id), warn: hole.diameterSuggested == true || hole.diameter <= 0)
                             Button { drawing.holes.removeAll { $0.id == hole.id }; changed() } label: {
                                 Image(systemName: "xmark").frame(width: 36,height: 44)
@@ -124,7 +124,7 @@ struct MainView: View {
                 if drawing.holes.isEmpty { Text("穴の位置を読み取れませんでした").font(.footnote).foregroundStyle(.orange) }
                 Button("穴を追加") {
                     var hole = Hole(x:0,y:0,diameter:0)
-                    hole.positionSuggested = true
+                    hole.xSuggested = true; hole.ySuggested = true
                     drawing.holes.append(hole); changed()
                     edit(.x(hole.id), value: 0)
                 }.buttonStyle(.bordered).frame(maxWidth:.infinity,alignment:.leading)
@@ -135,6 +135,7 @@ struct MainView: View {
                     sizeCell(.thickness,drawing.thickness); sizeCell(.chamfer,drawing.chamfer)
                 }
             }
+            Text("オレンジは要確認。数字を押すと修正できます。").font(.caption).foregroundStyle(.secondary)
             if !drawing.notes.isEmpty { Text(drawing.notes).font(.caption).foregroundStyle(.secondary) }
             if let photo {
                 DisclosureGroup("元の図面", isExpanded:$previewOriginal) { Image(uiImage:photo).resizable().scaledToFit() }
@@ -174,8 +175,8 @@ struct MainView: View {
         case .chamfer: drawing.chamfer = v
         case let .x(id), let .y(id), let .diameter(id):
             guard let i = drawing.holes.firstIndex(where: { $0.id == id }) else { return }
-            if case .x = target { drawing.holes[i].x = v }
-            if case .y = target { drawing.holes[i].y = v }
+            if case .x = target { drawing.holes[i].x = v; drawing.holes[i].xSuggested = false }
+            if case .y = target { drawing.holes[i].y = v; drawing.holes[i].ySuggested = false }
             if case .diameter = target { drawing.holes[i].diameter = v; drawing.holes[i].diameterSuggested = false }
         }
         changed(); editing = nil
@@ -330,10 +331,10 @@ struct DrawingPreview: View {
                 for p in outline.dropFirst() { path.addLine(to: pt(p.0,p.1)) }
                 path.closeSubpath()
                 ctx.stroke(path, with: .color(.white), lineWidth: 2)
-                for hole in drawing.holes where hole.diameter>0 && hole.diameter.isFinite && hole.x.isFinite && hole.y.isFinite {
+                for hole in drawing.holes where hole.diameter.isFinite && hole.x.isFinite && hole.y.isFinite {
                     let center=pt(hole.x,hole.y),r=CGFloat(hole.diameter)*scale/2
-                    ctx.stroke(Path(ellipseIn: CGRect(x:center.x-r,y:center.y-r,width:2*r,height:2*r)),with:.color(.red),lineWidth:2)
-                    var mark=Path();mark.move(to:CGPoint(x:center.x-4,y:center.y));mark.addLine(to:CGPoint(x:center.x+4,y:center.y));mark.move(to:CGPoint(x:center.x,y:center.y-4));mark.addLine(to:CGPoint(x:center.x,y:center.y+4));ctx.stroke(mark,with:.color(.red),lineWidth:1)
+                    if r > 0 { ctx.stroke(Path(ellipseIn: CGRect(x:center.x-r,y:center.y-r,width:2*r,height:2*r)),with:.color(.red),lineWidth:2); continue }
+                    var mark=Path();mark.move(to:CGPoint(x:center.x-4,y:center.y));mark.addLine(to:CGPoint(x:center.x+4,y:center.y));mark.move(to:CGPoint(x:center.x,y:center.y-4));mark.addLine(to:CGPoint(x:center.x,y:center.y+4));ctx.stroke(mark,with:.color(.orange),lineWidth:1)
                 }
             }
             .background(Color(red: 0.13, green: 0.13, blue: 0.13)).clipShape(RoundedRectangle(cornerRadius: 8))

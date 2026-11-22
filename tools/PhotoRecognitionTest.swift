@@ -18,9 +18,9 @@ import ImageIO
         guard rows.count == expected.count && zip(rows,expected).allSatisfy({ row,target in
             row.x == target.0 && row.y == target.1 && row.diameter == target.2
         }) else {
-            let labels = result.candidates.map { $0.text }.joined(separator:" ")
+            let labels = result.candidates.map { String(format:"%@(%0.3f,%0.3f,%0.2f)",$0.text,$0.rectangle.midX,$0.rectangle.midY,$0.confidence) }.joined(separator:" ")
             let actual = rows.map { String(describing: $0) }.joined(separator:" ")
-            FileHandle.standardError.write(Data("::error::Rows: \(actual). OCR: \(labels)\n".utf8))
+            FileHandle.standardError.write(Data("::error::Drawing: \(String(describing:result.ordinateDrawing)). Rows: \(actual). OCR: \(labels)\n".utf8))
             throw NSError(domain:"RecognitionTest",code:1)
         }
         print("Reference layout: all seven rows matched from image pixels.")

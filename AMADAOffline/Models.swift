@@ -4,7 +4,8 @@ struct Hole: Identifiable, Codable, Equatable {
     var id = UUID()
     var x: Double
     var y: Double
-    var positionSuggested: Bool? = nil
+    var xSuggested: Bool? = nil
+    var ySuggested: Bool? = nil
     var diameterSuggested: Bool? = nil
     var diameter: Double
 }

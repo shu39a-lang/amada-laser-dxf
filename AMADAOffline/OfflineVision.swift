@@ -229,6 +229,27 @@ private enum OrdinateReader {
                 }
             }
         }
+        if choices.isEmpty {
+            for start in marks where start.value > 0 {
+                let band = horizontal ? start.box.height : start.box.width
+                let nearby = marks.filter { abs($0.across(horizontal)-start.across(horizontal)) < min(0.04,max(0.012,band*1.5)) }
+                for end in nearby where end.value > start.value {
+                    let scale = (end.along(horizontal)-start.along(horizontal))/(end.value-start.value)
+                    let zero = start.along(horizontal)-start.value*scale
+                    guard scale > 0, zero >= 0, end.value*scale > 0.055 else { continue }
+                    let fits = nearby.filter {
+                        $0.value > 0 && $0.value <= end.value &&
+                        abs($0.along(horizontal)-zero-$0.value*scale) < max(0.004,end.value*scale*0.025)
+                    }
+                    let unique = Dictionary(grouping:fits,by:{ $0.value }).compactMap { $0.value.first }
+                    guard unique.count >= 3, marks.contains(where:{ other in
+                        other.value == end.value && abs(other.across(horizontal)-end.across(horizontal)) > 0.05 &&
+                        abs(other.along(horizontal)-zero-end.value*scale/2) < end.value*scale*0.24
+                    }) else { continue }
+                    choices.append(Axis(marks:unique,zero:zero,scale:scale,extent:end.value))
+                }
+            }
+        }
         let ranked = choices.sorted { $0.marks.count > $1.marks.count }
         guard let best = ranked.first, ranked.filter({ $0.marks.count == best.marks.count }).allSatisfy({
             $0.extent == best.extent && abs($0.zero-best.zero) < 0.01
@@ -257,7 +278,8 @@ private enum OrdinateReader {
         let labels = labels.filter { $0.confidence >= 0.5 }
         func clean(_ s: String) -> String { s.precomposedStringWithCompatibilityMapping.replacingOccurrences(of: " ", with: "") }
         let marks: [Mark] = labels.compactMap {
-            let s = clean($0.text)
+            let text = clean($0.text)
+            let s = ["O","o","〇"].contains(text) ? "0" : text
             guard s.range(of: #"^\d{1,4}(?:\.\d{1,3})?$"#, options: .regularExpression) != nil,
                   let v = Double(s) else { return nil }
             return Mark(value: v, box: $0.rectangle)
@@ -294,7 +316,11 @@ private enum OrdinateReader {
         var groups: [Callout] = []
         var groupBoxes: [CGRect] = []
         for label in labels {
-            let s = clean(label.text)
+            let original = clean(label.text)
+            // OCR may read the crossed diameter glyph as zero after a quantity.
+            // Keep this substitution confined to counted callouts with decimal diameters.
+            let s = original.replacingOccurrences(of: #"^(\d{1,2}[-‐−])0(?=[1-9]\d*\.\d+$)"#,
+                                                  with:"$1Ø",options:.regularExpression)
             guard let match = re.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else { continue }
             func field(_ n: Int) -> String? { Range(match.range(at:n),in:s).map { String(s[$0]) } }
             guard let nominal = Double(field(3) ?? ""), nominal > 0 else { continue }
@@ -353,12 +379,23 @@ private enum OrdinateReader {
                 let partial = matched.count < group.count || !outlineRepeated
                 draft.holes += matched.values.sorted { ($0.x,$0.y) < ($1.x,$1.y) }.map { hole in
                     var row = hole
-                    row.positionSuggested = partial
+                    row.xSuggested = partial
+                    row.ySuggested = partial
                     row.diameterSuggested = group.thread
                     return row
                 }
                 if group.thread { draft.notes = "M3×0.5の下穴は切削タップ用の候補φ2.5。加工方法と指定径を確認してください。" }
             }
+        }
+        // Keep a located hole even when the photograph lost the diameter callout.
+        // Leave its diameter blank instead of assigning a size from pixels.
+        for circle in circles where circle.confidence >= 0.89 {
+            guard let mx = x.nearest(circle.center.x-registration.x),
+                  let my = y.nearest(circle.center.y-registration.y),
+                  abs(circle.center.x-registration.x-x.zero-mx.value*x.scale) < x.scale*x.extent*0.022,
+                  abs(circle.center.y-registration.y-y.zero-my.value*y.scale) < y.scale*y.extent*0.035,
+                  !draft.holes.contains(where:{ $0.x == mx.value && $0.y == my.value }) else { continue }
+            draft.holes.append(Hole(x:mx.value,y:my.value,xSuggested:true,ySuggested:true,diameterSuggested:true,diameter:0))
         }
         return draft
     }
