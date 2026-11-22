@@ -6,6 +6,8 @@ struct MainView: View {
     @State private var selected: PhotosPickerItem?
     @State private var cameraShown = false
     @State private var photo: UIImage?
+    @State private var pendingPhoto: UIImage?
+    @State private var askCloud = false
     @State private var recognitionID = UUID()
     @State private var busy = false
     @State private var showingResult = false
@@ -85,6 +87,12 @@ struct MainView: View {
                         Button("保存") { save(target) }.buttonStyle(.borderedProminent)
                     }
                 }.padding().presentationDetents([.height(215)])
+            }
+            .alert("この図面をGoogleで読み取りますか？", isPresented: $askCloud) {
+                Button("Googleに送信して読み取る") { recognizePending(useCloud: true) }
+                Button("端末内で読み取る", role: .cancel) { recognizePending(useCloud: false) }
+            } message: {
+                Text("今回選んだ写真をGoogle Cloudに送信し、寸法などの文字を読み取ります。")
             }
             .onChange(of: selected) { _, item in
                 guard let item else { return }
@@ -193,6 +201,21 @@ struct MainView: View {
     }
 
     private func loadPhoto(_ image: UIImage) {
+        if CloudOCR.endpoint != nil {
+            pendingPhoto = image
+            askCloud = true
+        } else {
+            recognize(image, useCloud: false)
+        }
+    }
+
+    private func recognizePending(useCloud: Bool) {
+        guard let image = pendingPhoto else { return }
+        pendingPhoto = nil
+        recognize(image, useCloud: useCloud)
+    }
+
+    private func recognize(_ image: UIImage, useCloud: Bool) {
         // Normalize camera / photo-library orientation before Vision obtains cgImage.
         let originalSize = image.size
         let maxSide: CGFloat = 2400
@@ -215,7 +238,13 @@ struct MainView: View {
         let id = recognitionID
         Task {
             do {
-                let analysis = try await OfflineVision.analyze(image:normalized)
+                var extra: [OCRCandidate] = []
+                if useCloud {
+                    extra = (try? await CloudOCR.read(normalized)) ?? []
+                    guard recognitionID == id else { return }
+                    if extra.isEmpty { message = "Googleの読み取り結果を取得できなかったため、端末内の結果を表示します。" }
+                }
+                let analysis = try await OfflineVision.analyze(image:normalized, extra: extra)
                 guard recognitionID == id else { return }
                 drawing = analysis.ordinateDrawing ?? Drawing()
                 for field in recognizeDrawingFields(analysis.candidates) {

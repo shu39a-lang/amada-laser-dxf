@@ -38,7 +38,20 @@ is per billing account across projects, not a per-app unlimited guarantee.
 Do not assume one photographed drawing is exactly one billable unit if multiple
 features or requests are used.
 
-## Current status
-Code prepared only. No Google Cloud account credentials were obtained; no
-deployment, production OCR call, iOS app integration, billing or accuracy test
-has been performed. Current app remains unchanged.
+
+## iOS integration on the working branch
+
+The application target links FirebaseCore and FirebaseAppCheck. To activate
+recognition, bundle the Firebase console's GoogleService-Info.plist for
+com.shu39a.amadaoffline in the target's Copy Bundle Resources and set the Xcode
+build setting CLOUD_OCR_ENDPOINT to the deployed HTTPS run.app URL ending in
+/v1/ocr. Register DeviceCheck (the Apple SDK default provider) for this iOS
+app in Firebase. Set FIREBASE_IOS_APP_ID on Cloud Run to the registered
+Firebase Google App ID (the GOOGLE_APP_ID in that plist).
+
+With either client setting absent, selecting a drawing uses local OCR. When
+configured, the app asks separately for each photo. Only the Google option
+sends a normalized JPEG. Returned word boxes are converted to Apple Vision
+coordinates before the existing drawing reader runs. No live deployment,
+physical-device App Check verification or drawing accuracy measurement has
+been performed.

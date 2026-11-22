@@ -8,13 +8,13 @@ import CoreImage
 // All processing stays on-device. No API keys, server or network requests.
 enum OfflineVision {
     #if canImport(UIKit)
-    static func analyze(image: UIImage) async throws -> RecognitionResult {
+    static func analyze(image: UIImage, extra: [OCRCandidate] = []) async throws -> RecognitionResult {
         guard let cgImage = image.cgImage else { throw NSError(domain: "AMADA", code: 1, userInfo: [NSLocalizedDescriptionKey: "JPEGまたはPNG画像を選んでください"]) }
-        return try await analyze(cgImage:cgImage)
+        return try await analyze(cgImage:cgImage, extra: extra)
     }
     #endif
 
-    static func analyze(cgImage: CGImage) async throws -> RecognitionResult {
+    static func analyze(cgImage: CGImage, extra: [OCRCandidate] = []) async throws -> RecognitionResult {
         return try await Task.detached(priority: .userInitiated) {
             let text = VNRecognizeTextRequest()
             text.recognitionLevel = .accurate
@@ -35,7 +35,7 @@ enum OfflineVision {
             #if os(macOS)
             for request: VNRequest in [text, rectangles, contours] { request.usesCPUOnly = true }
             #endif
-            try handler.perform([text])
+            if extra.isEmpty { try handler.perform([text]) } else { try? handler.perform([text]) }
             try? handler.perform([rectangles])
             try? handler.perform([contours])
             var candidates: [OCRCandidate] = (text.results ?? []).compactMap { item in
@@ -110,6 +110,15 @@ enum OfflineVision {
                         }
                     }
                 }
+            }
+            for word in extra {
+                let duplicate = candidates.contains { local in
+                    guard local.text == word.text else { return false }
+                    let overlap = local.rectangle.intersection(word.rectangle)
+                    return !overlap.isNull && overlap.width * overlap.height >
+                        0.5 * min(local.rectangle.width * local.rectangle.height, word.rectangle.width * word.rectangle.height)
+                }
+                if !duplicate { candidates.append(word) }
             }
             // This is only a bounding-box candidate. Dimension/leader lines may be mistaken for an outline.
             let rect = (rectangles.results ?? []).max(by: {

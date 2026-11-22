@@ -13,6 +13,7 @@ from google.cloud import vision
 app = Flask(__name__)
 firebase_admin.initialize_app()
 _client = vision.ImageAnnotatorClient()
+EXPECTED_APP_ID = os.environ["FIREBASE_IOS_APP_ID"]
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 @app.post("/v1/ocr")
@@ -21,9 +22,12 @@ def recognize_drawing():
     if not token:
         return jsonify(error="App Check token required"), 401
     try:
-        app_check.verify_token(token)
+        claims = app_check.verify_token(token)
     except Exception:
         return jsonify(error="Invalid App Check token"), 401
+
+    if not EXPECTED_APP_ID or claims.get("sub") != EXPECTED_APP_ID:
+        return jsonify(error="App not authorized"), 403
 
     if request.content_type not in ("image/jpeg", "image/png"):
         return jsonify(error="JPEG or PNG required"), 415
@@ -38,7 +42,7 @@ def recognize_drawing():
         image_context=vision.ImageContext(language_hints=["ja", "en"]),
     )
     if result.error.message:
-        app.logger.error("Google Vision OCR failed: %s", result.error.message)
+        app.logger.error("Google Vision OCR failed")
         return jsonify(error="OCR request failed"), 502
 
     words = []
