@@ -54,7 +54,7 @@ enum CloudDrawingRecognition {
     static func analyze(_ photo: UIImage) async throws -> AIResult {
         let model = FirebaseAI.firebaseAI(backend: .googleAI())
             .generativeModel(
-                modelName: "gemini-3.6-flash",
+                modelName: "gemini-3.8-flash",
                 generationConfig: GenerationConfig(
                     temperature: 0,
                     responseMIMEType: "application/json"
