@@ -31,7 +31,13 @@ enum OfflineVision {
             contours.contrastAdjustment = 1.0
             contours.detectsDarkOnLight = true
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            try handler.perform([text, rectangles, contours])
+            // Some runtimes cannot service contours. Keep independent text results in that case.
+            #if os(macOS)
+            for request: VNRequest in [text, rectangles, contours] { request.usesCPUOnly = true }
+            #endif
+            try handler.perform([text])
+            try? handler.perform([rectangles])
+            try? handler.perform([contours])
             var candidates: [OCRCandidate] = (text.results ?? []).compactMap { item in
                 guard let top = item.topCandidates(1).first else { return nil }
                 return OCRCandidate(text: top.string, confidence: top.confidence, rectangle: item.boundingBox)
@@ -41,6 +47,9 @@ enum OfflineVision {
             // geometry, preferring the more confident text at the same location.
             if let enhanced = Self.enhanceForText(cgImage) {
                 let retry = VNRecognizeTextRequest()
+                #if os(macOS)
+                retry.usesCPUOnly = true
+                #endif
                 retry.recognitionLevel = .accurate
                 retry.usesLanguageCorrection = false
                 retry.recognitionLanguages = ["ja-JP", "en-US"]
@@ -80,6 +89,9 @@ enum OfflineVision {
                     }
                     for rotated in [false,true] {
                         let request = VNRecognizeTextRequest()
+                        #if os(macOS)
+                        request.usesCPUOnly = true
+                        #endif
                         request.recognitionLevel = .accurate
                         request.usesLanguageCorrection = false
                         request.recognitionLanguages = ["en-US","ja-JP"]
@@ -277,7 +289,7 @@ private enum OrdinateReader {
             }
         }
         if thicknesses.count == 1 { draft.thickness = thicknesses.first ?? 0 }
-        let pattern = #"^(?:(\d{1,2})[-‐−×])?([φΦØ⌀M])(\d+(?:\.\d+)?)(?:[xX×](\d+(?:\.\d+)?))?$"#
+        let pattern = #"^(?:(\d{1,2})[-‐‑–—−×])?([φΦØø⌀Mm])(\d+(?:\.\d+)?)(?:[xX×](\d+(?:\.\d+)?))?$"#
         guard let re = try? NSRegularExpression(pattern: pattern) else { return draft }
         var groups: [Callout] = []
         var groupBoxes: [CGRect] = []
@@ -286,7 +298,7 @@ private enum OrdinateReader {
             guard let match = re.firstMatch(in:s,range:NSRange(s.startIndex...,in:s)) else { continue }
             func field(_ n: Int) -> String? { Range(match.range(at:n),in:s).map { String(s[$0]) } }
             guard let nominal = Double(field(3) ?? ""), nominal > 0 else { continue }
-            let thread = field(2) == "M"
+            let thread = field(2)?.uppercased() == "M"
             // Only this explicitly supported coarse thread has a cutting-tap pilot suggestion.
             if thread && !(nominal == 3 && Double(field(4) ?? "") == 0.5) { continue }
             let count = Int(field(1) ?? "1") ?? 1

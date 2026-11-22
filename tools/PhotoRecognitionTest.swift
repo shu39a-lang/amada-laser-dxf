@@ -1,7 +1,14 @@
 import Foundation
 import ImageIO
 @main struct PhotoRecognitionTest {
-    static func main() async throws {
+    static func main() async {
+        do { try await compare() }
+        catch {
+            FileHandle.standardError.write(Data("::error::Recognition test failed: \(error)\n".utf8))
+            exit(1)
+        }
+    }
+    static func compare() async throws {
         let url = URL(fileURLWithPath:CommandLine.arguments[1])
         let source = CGImageSourceCreateWithURL(url as CFURL,nil)!
         let raster = CGImageSourceCreateImageAtIndex(source,0,nil)!
@@ -13,7 +20,7 @@ import ImageIO
         }) else {
             let labels = result.candidates.map { $0.text }.joined(separator:" ")
             let actual = rows.map { String(describing: $0) }.joined(separator:" ")
-            print("::error::Rows: \(actual). OCR: \(labels)")
+            FileHandle.standardError.write(Data("::error::Rows: \(actual). OCR: \(labels)\n".utf8))
             throw NSError(domain:"RecognitionTest",code:1)
         }
         print("Reference layout: all seven rows matched from image pixels.")

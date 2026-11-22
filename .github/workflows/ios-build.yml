@@ -55,4 +55,8 @@ jobs:
       - name: Read a drawing image and compare all seven hole rows
         run: |
           swiftc -O AMADAOffline/Models.swift AMADAOffline/OfflineVision.swift tools/PhotoRecognitionTest.swift -o /tmp/photo-test
-          /tmp/photo-test tools/ordinate-fixture.png
+          /tmp/photo-test tools/ordinate-fixture.png > /tmp/recognition.log 2>&1 || {
+            head -c 3000 /tmp/recognition.log | tr '\n' ' ' | sed 's/^/::error::/'
+            exit 1
+          }
+          cat /tmp/recognition.log
