@@ -164,6 +164,20 @@ struct MainView: View {
                 Text(recognitionSummary).font(.subheadline.bold())
                     .foregroundStyle(recognitionSummary.contains("失敗") ? .orange : .white)
             }
+            if recognitionSummary.contains("失敗") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("接続エラーの詳細").font(.headline).foregroundStyle(.orange)
+                    Text(message).font(.footnote).foregroundStyle(.white).textSelection(.enabled)
+                    Button {
+                        UIPasteboard.general.string = message
+                    } label: {
+                        Label("エラー内容をコピー", systemImage: "doc.on.doc")
+                    }.buttonStyle(.bordered)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
+            }
             if recognitionSummary.contains("失敗"), let photo {
                 Button("Google AIで再読み取り") {
                     recognizeGoogleDrawing(photo)
