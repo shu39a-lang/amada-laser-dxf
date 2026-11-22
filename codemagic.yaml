@@ -27,12 +27,29 @@ workflows:
         script: |
           cd "$CM_BUILD_DIR"
           xcrun agvtool new-version -all "$BUILD_NUMBER"
+      - name: Verify Xcode compilation before signing
+        script: |
+          set -o pipefail
+          xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee /tmp/sheet-master-compile.log || {
+            echo '=== SHEET MASTER COMPILER ERRORS ==='
+            grep -nE 'error:|fatal error:|BUILD FAILED|no such module' /tmp/sheet-master-compile.log | tail -n 80 || true
+            exit 1
+          }
       - name: Build IPA
         script: |
-          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+          set -o pipefail
+          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME" 2>&1 | tee /tmp/sheet-master-archive.log || {
+            echo '=== SHEET MASTER ARCHIVE ERRORS ==='
+            grep -nEi 'error:|fatal error:|provision|entitlement|signing|Failed to archive' /tmp/sheet-master-archive.log | tail -n 80 || true
+            exit 1
+          }
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      - /tmp/sheet-master-compile.log
+      - /tmp/sheet-master-archive.log
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
     publishing:
       app_store_connect:
