@@ -538,7 +538,15 @@ private struct RingImage {
         guard boxes.count < 6000 else { return [] }
         func words(_ vertical:Bool) -> [CGRect] {
             func oriented(_ b:CGRect)->CGRect { vertical ? CGRect(x:b.minY,y:b.minX,width:b.height,height:b.width) : b }
-            let bs=boxes.map(oriented).filter { $0.height>=3 && $0.height<=CGFloat(max(16,min(w,h)/27)) && $0.width <= $0.height*6 }.sorted { $0.minX < $1.minX }
+            var bs: [CGRect] = []
+            let maximumHeight = CGFloat(max(16,min(w,h)/27))
+            for box in boxes {
+                let rect = oriented(box)
+                if rect.height >= 3 && rect.height <= maximumHeight && rect.width <= rect.height*6 {
+                    bs.append(rect)
+                }
+            }
+            bs.sort { left,right in left.minX < right.minX }
             var seen=Set<Int>(), output:[CGRect]=[]
             for i in bs.indices where !seen.contains(i) {
                 let seed=bs[i]; var union=seed; seen.insert(i)
