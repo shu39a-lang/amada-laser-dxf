@@ -18,8 +18,18 @@ enum CloudDrawingRecognition {
 
     @MainActor
     static func read(_ image: UIImage) async throws -> [OCRCandidate] {
-        guard let data = image.jpegData(compressionQuality: 0.92),
-              data.count <= 8 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
+        // Keep the original high-resolution drawing whenever possible.
+        // A detailed photo may exceed the server's 8 MB limit at quality 0.92;
+        // retry JPEG encoding before treating that as a recognition failure.
+        var jpeg: Data?
+        for quality: CGFloat in [0.92, 0.82, 0.70, 0.55] {
+            if let candidate = image.jpegData(compressionQuality: quality),
+               candidate.count <= 8 * 1024 * 1024 {
+                jpeg = candidate
+                break
+            }
+        }
+        guard let data = jpeg else { throw URLError(.dataLengthExceedsMaximum) }
         if FirebaseApp.app() == nil { FirebaseApp.configure() }
         let token = try await AppCheck.appCheck().token(forcingRefresh: false)
         var request = URLRequest(url: endpoint, timeoutInterval: 25)
