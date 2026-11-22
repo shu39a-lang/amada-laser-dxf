@@ -6,6 +6,8 @@ initializeApp({ credential: applicationDefault(), projectId: process.env.GOOGLE_
 const port = Number(process.env.PORT || 8080);
 const maxBytes = 8 * 1024 * 1024;
 const model = process.env.CLAUDE_MODEL || 'claude-sonnet-5-5';
+const expectedAppId = process.env.FIREBASE_APP_ID;
+if (!expectedAppId) throw new Error('FIREBASE_APP_ID must be configured');
 const json = (res, status, obj) => {
   res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store' });
   res.end(JSON.stringify(obj));
@@ -28,7 +30,7 @@ http.createServer(async (req,res) => {
   if (typeof token !== 'string' || !token) return json(res,401,{error:'app_check_required'});
   try {
     const decoded=await getAppCheck().verifyToken(token);
-    if (decoded.app_id && decoded.app_id !== process.env.FIREBASE_APP_ID) {
+    if (decoded.app_id !== expectedAppId) {
       return json(res,403,{error:'wrong_app'});
     }
   } catch {
