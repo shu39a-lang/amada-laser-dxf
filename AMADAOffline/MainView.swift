@@ -320,12 +320,25 @@ struct MainView: View {
                 message = result.diagnostics
             } catch {
                 guard recognitionID == id else { return }
-                recognitionSummary = "Google OCRとの接続に失敗しました"
-                let ns = error as NSError
-                let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError
-                let detail = underlying.map { " / 原因: \($0.domain) (\($0.code)): \($0.localizedDescription)" } ?? ""
-                message = "読み取りエラー [\(ns.domain) / \(ns.code)] \(error.localizedDescription)\(detail)"
-                print("[SHEET MASTER] \(message)")
+                let ocrError = error.localizedDescription
+                // OCR server outage must not silently turn into an empty drawing.
+                // Reuse Firebase AI Logic to read the original photo directly.
+                do {
+                    let ai = try await CloudDrawingRecognition.analyze(normalized)
+                    guard recognitionID == id else { return }
+                    drawing = CloudDrawingRecognition.drawing(from: ai)
+                    detectedText = ai.read_numbers ?? []
+                    recognitionSummary = "Gemini AIで図面候補を読み取りました（要照合）"
+                    message = "専用OCRに接続できなかったためGemini AIに切り替えました。OCR: \(ocrError)。図面と数値を必ず照合してください。"
+                } catch {
+                    guard recognitionID == id else { return }
+                    recognitionSummary = "Google OCR・Gemini AIとも接続に失敗しました"
+                    let ns = error as NSError
+                    let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError
+                    let detail = underlying.map { " / 原因: \($0.domain) (\($0.code)): \($0.localizedDescription)" } ?? ""
+                    message = "専用OCR: \(ocrError) / Gemini AI: [\(ns.domain) / \(ns.code)] \(error.localizedDescription)\(detail)"
+                    print("[SHEET MASTER] \(message)")
+                }
             }
             guard recognitionID == id else { return }
             busy = false
