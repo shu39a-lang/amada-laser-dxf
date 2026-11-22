@@ -52,7 +52,7 @@ jobs:
           assert 'CloudDrawingRecognition.analyze(normalized)' in view
           assert 'OfflineVision.analyze(image:normalized)' not in view
           assert 'FirebaseAI.firebaseAI(backend: .googleAI())' in cloud
-          assert 'gemini-3.8-flash' in cloud
+          assert 'gemini-3.6-flash' in cloud
           assert 'FirebaseApp.configure()' in app
           assert 'FirebaseAILogic' in project and 'FirebaseAppCheck' in project
           print("Firebase AI Logic, Google Gemini, red design, yellow controls and Google-only recognition checked.")
