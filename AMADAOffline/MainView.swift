@@ -47,8 +47,17 @@ struct MainView: View {
                         Text(showingResult ? "② 図面の数値を確認" : "① 図面を撮影・選択")
                             .font(.title2.bold()).foregroundStyle(masterYellow)
                         if showingResult {
-                            if busy { ProgressView("図面を読み取り中…").frame(maxWidth: .infinity, minHeight: 160) }
-                            else { result }
+                            if busy {
+                                VStack(spacing: 12) {
+                                    if let photo {
+                                        Image(uiImage: photo)
+                                            .resizable().scaledToFit().frame(maxHeight: 195)
+                                    }
+                                    ProgressView("Google AIで図面を読み取り中…")
+                                    Text("寸法・穴数・中心座標・穴径を確認しています")
+                                        .font(.caption).foregroundStyle(.white)
+                                }.frame(maxWidth: .infinity, minHeight: 180)
+                            } else { result }
                         } else {
                             if let photo {
                                 Image(uiImage: photo).resizable().scaledToFit().frame(maxHeight: 220)
@@ -146,7 +155,13 @@ struct MainView: View {
                 }.buttonStyle(.bordered).frame(maxWidth:.infinity,alignment:.leading)
             }
             if !recognitionSummary.isEmpty {
-                Text(recognitionSummary).font(.caption).foregroundStyle(.secondary)
+                Text(recognitionSummary).font(.subheadline.bold())
+                    .foregroundStyle(recognitionSummary.contains("失敗") ? .orange : .white)
+            }
+            if recognitionSummary.contains("失敗"), let photo {
+                Button("Google AIで再読み取り") {
+                    recognizeGoogleDrawing(photo)
+                }.buttonStyle(MasterYellowButton())
             }
             if !detectedText.isEmpty {
                 DisclosureGroup("写真から読み取った文字・寸法候補（\(detectedText.count)件）") {
@@ -255,55 +270,26 @@ struct MainView: View {
         verifiedAgainstOriginal = false
         showingResult = true
         busy = true
+        recognizeGoogleDrawing(normalized)
+    }
+
+    private func recognizeGoogleDrawing(_ normalized: UIImage) {
         let id = recognitionID
+        busy = true
+        recognitionSummary = "Google AIに接続して図面を解析しています"
         Task {
-            if CloudDrawingRecognition.isConfigured {
-                do {
-                    let ai = try await CloudDrawingRecognition.analyze(normalized)
-                    guard recognitionID == id else { return }
-                    drawing = CloudDrawingRecognition.drawing(from: ai)
-                    recognitionSummary = "Google AIで解析しました。原図との照合が必要です。"
-                    message = (ai.warnings ?? []).joined(separator: "、")
-                    busy = false
-                    return
-                } catch {
-                    guard recognitionID == id else { return }
-                    message = "Google AIに接続できませんでした：\(error.localizedDescription)。端末内の読み取りで再試行します。"
-                }
-            } else {
-                message = "Google AIの接続先が未設定です。現在は端末内の読み取り結果です。"
-            }
             do {
-                let analysis = try await OfflineVision.analyze(image:normalized)
+                let ai = try await CloudDrawingRecognition.analyze(normalized)
                 guard recognitionID == id else { return }
-                drawing = analysis.ordinateDrawing ?? Drawing()
-                recognitionSummary = analysis.diagnostics
-                var seen = Set<String>()
-                detectedText = analysis.candidates
-                    .filter { $0.confidence >= 0.35 }
-                    .sorted { a, b in
-                        if abs(a.rectangle.midY - b.rectangle.midY) > 0.012 {
-                            return a.rectangle.midY > b.rectangle.midY
-                        }
-                        return a.rectangle.minX < b.rectangle.minX
-                    }
-                    .map { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    .filter { !$0.isEmpty && seen.insert($0).inserted }
-                    .prefix(100)
-                    .map { $0 }
-                for field in recognizeDrawingFields(analysis.candidates) {
-                    switch field.key {
-                    case "thickness": drawing.thickness = Double(field.value) ?? drawing.thickness
-                    case "chamfer": drawing.chamfer = Double(field.value) ?? drawing.chamfer
-                    case "material": drawing.material = field.value
-                    case "number": drawing.drawingNumber = field.value
-                    default: break
-                    }
-                }
+                drawing = CloudDrawingRecognition.drawing(from: ai)
+                recognitionSummary = "Google AIの読み取り候補です。元の図面で寸法を照合してください。"
+                message = (ai.warnings ?? []).joined(separator: "、")
             } catch {
                 guard recognitionID == id else { return }
-                message = error.localizedDescription
+                recognitionSummary = "Google AIとの接続に失敗しました"
+                message = "Google AIを利用できません。通信とFirebase AI Logic設定を確認してください。詳細：\(error.localizedDescription)"
             }
+            guard recognitionID == id else { return }
             busy = false
         }
     }
