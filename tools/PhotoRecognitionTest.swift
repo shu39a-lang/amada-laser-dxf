@@ -13,7 +13,17 @@ import ImageIO
         let source = CGImageSourceCreateWithURL(url as CFURL,nil)!
         let raster = CGImageSourceCreateImageAtIndex(source,0,nil)!
         let result = try await OfflineVision.analyze(cgImage:raster)
-        let rows = result.ordinateDrawing?.holes ?? []
+        let drawing = result.ordinateDrawing
+        let rows = drawing?.holes ?? []
+        // Hole-count matching alone can conceal an incorrect overall scale.
+        // The seven-hole reference drawing explicitly measures 150 x 35 mm.
+        if !CommandLine.arguments.contains("--alternate") {
+            guard drawing?.width == 150, drawing?.height == 35 else {
+                throw NSError(domain: "RecognitionTest", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "Reference overall dimensions must be 150 x 35 mm; got \(String(describing: drawing?.width)) x \(String(describing: drawing?.height))"])
+            }
+        }
         let expected = CommandLine.arguments.contains("--alternate") ? [(12.0,30.0,8.0),(117,30,8),(36,9,2.5),(78,17,2.5)] : [(15.0,28.0,6.5),(135,28,6.5),(23.5,10,2.5),(44.5,10,2.5),(68,23,2.5),(75,23,2.5),(113,23,2.5)]
         guard rows.count == expected.count && zip(rows,expected).allSatisfy({ row,target in
             row.x == target.0 && row.y == target.1 && row.diameter == target.2
