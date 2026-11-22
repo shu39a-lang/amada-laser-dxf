@@ -130,6 +130,12 @@ struct MainView: View {
             } else if let photo {
                 Image(uiImage: photo).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 200)
             }
+            HStack {
+                Label("穴の候補：\(drawing.holes.count)件", systemImage: "circle.dotted.circle")
+                    .font(.headline)
+                Spacer()
+                Text("単位：mm").font(.caption).foregroundStyle(.white.opacity(0.8))
+            }
             GroupBox("穴（中心のX、Yと直径Φ）") {
                 Grid(horizontalSpacing: 6, verticalSpacing: 6) {
                     GridRow {
@@ -164,7 +170,7 @@ struct MainView: View {
                 }.buttonStyle(MasterYellowButton())
             }
             if !detectedText.isEmpty {
-                DisclosureGroup("写真から読み取った文字・寸法候補（\(detectedText.count)件）") {
+                DisclosureGroup("Google AIが読み取った印刷数値・寸法候補（\(detectedText.count)件）") {
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(detectedText.indices, id: \.self) { index in
                             Text(detectedText[index])
@@ -282,6 +288,7 @@ struct MainView: View {
                 let ai = try await CloudDrawingRecognition.analyze(normalized)
                 guard recognitionID == id else { return }
                 drawing = CloudDrawingRecognition.drawing(from: ai)
+                detectedText = Array((ai.read_numbers ?? []).prefix(100))
                 recognitionSummary = "Google AIの読み取り候補です。元の図面で寸法を照合してください。"
                 message = (ai.warnings ?? []).joined(separator: "、")
             } catch {
