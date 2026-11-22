@@ -32,13 +32,13 @@ jobs:
           project = Path("AMADAOffline.xcodeproj/project.pbxproj").read_text()
           assert 'masterRed.ignoresSafeArea()' in view
           assert 'MasterYellowButton' in view
-          assert 'CloudDrawingRecognition.analyze(normalized)' in view
+          assert 'CloudDrawingRecognition.read(normalized)' in view
           assert 'OfflineVision.analyze(image:normalized)' not in view
-          assert 'FirebaseAI.firebaseAI(backend: .googleAI(), useLimitedUseAppCheckTokens: true)' in cloud
-          assert 'gemini-3.8-flash' in cloud
+          assert 'X-Firebase-AppCheck' in cloud and '/v1/ocr' in cloud
+          assert 'OfflineVision.geometry(cgImage: raster, candidates: words)' in view
           assert 'FirebaseApp.configure()' in app
           assert 'FirebaseAILogic' in project and 'FirebaseAppCheck' in project
-          print("Firebase AI Logic, Google Gemini, red design, yellow controls and Google-only recognition checked.")
+          print("Cloud Vision OCR, red design, yellow controls and Google-only recognition checked.")
           PY
       - name: Compile iPhone and iPad app without signing
         run: |

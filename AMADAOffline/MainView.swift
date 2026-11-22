@@ -53,7 +53,7 @@ struct MainView: View {
                                         Image(uiImage: photo)
                                             .resizable().scaledToFit().frame(maxHeight: 195)
                                     }
-                                    ProgressView("Google AIで図面を読み取り中…")
+                                    ProgressView("Google OCRで図面を読み取り中…")
                                     Text("寸法・穴数・中心座標・穴径を確認しています")
                                         .font(.caption).foregroundStyle(.white)
                                 }.frame(maxWidth: .infinity, minHeight: 180)
@@ -179,12 +179,12 @@ struct MainView: View {
                 .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 10))
             }
             if recognitionSummary.contains("失敗"), let photo {
-                Button("Google AIで再読み取り") {
+                Button("Google OCRで再読み取り") {
                     recognizeGoogleDrawing(photo)
                 }.buttonStyle(MasterYellowButton())
             }
             if !detectedText.isEmpty {
-                DisclosureGroup("Google AIが読み取った印刷数値・寸法候補（\(detectedText.count)件）") {
+                DisclosureGroup("Google OCRが読み取った印刷数値・寸法候補（\(detectedText.count)件）") {
                     VStack(alignment: .leading, spacing: 5) {
                         ForEach(detectedText.indices, id: \.self) { index in
                             Text(detectedText[index])
@@ -296,22 +296,35 @@ struct MainView: View {
     private func recognizeGoogleDrawing(_ normalized: UIImage) {
         let id = recognitionID
         busy = true
-        recognitionSummary = "Google AIに接続して図面を解析しています"
+        recognitionSummary = "Google OCRに接続して図面を解析しています"
         Task {
             do {
-                let ai = try await CloudDrawingRecognition.analyze(normalized)
+                let words = try await CloudDrawingRecognition.read(normalized)
+                guard recognitionID == id, let raster = normalized.cgImage else { return }
+                let result = await Task.detached(priority: .userInitiated) {
+                    OfflineVision.geometry(cgImage: raster, candidates: words)
+                }.value
                 guard recognitionID == id else { return }
-                drawing = CloudDrawingRecognition.drawing(from: ai)
-                detectedText = Array((ai.read_numbers ?? []).prefix(100))
-                recognitionSummary = "Google AIの読み取り候補です。元の図面で寸法を照合してください。"
-                message = (ai.warnings ?? []).joined(separator: "、")
+                drawing = result.ordinateDrawing ?? Drawing()
+                for field in recognizeDrawingFields(words) {
+                    switch field.key {
+                    case "thickness": drawing.thickness = Double(field.value) ?? 0
+                    case "chamfer": drawing.chamfer = Double(field.value) ?? 0
+                    case "material": drawing.material = field.value
+                    case "number": drawing.drawingNumber = field.value
+                    default: break
+                    }
+                }
+                detectedText = words.map(\.text)
+                recognitionSummary = "Google OCRで文字を\(words.count)件読み取りました。元の図面で寸法を照合してください。"
+                message = result.diagnostics
             } catch {
                 guard recognitionID == id else { return }
-                recognitionSummary = "Google AIとの接続に失敗しました"
+                recognitionSummary = "Google OCRとの接続に失敗しました"
                 let ns = error as NSError
                 let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError
                 let detail = underlying.map { " / 原因: \($0.domain) (\($0.code)): \($0.localizedDescription)" } ?? ""
-                message = "Firebase接続エラー [\(ns.domain) / \(ns.code)] \(error.localizedDescription)\(detail)"
+                message = "読み取りエラー [\(ns.domain) / \(ns.code)] \(error.localizedDescription)\(detail)"
                 print("[SHEET MASTER] \(message)")
             }
             guard recognitionID == id else { return }

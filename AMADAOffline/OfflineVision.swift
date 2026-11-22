@@ -20,24 +20,12 @@ enum OfflineVision {
             text.recognitionLevel = .accurate
             text.usesLanguageCorrection = false
             text.recognitionLanguages = ["ja-JP", "en-US"]
-            let rectangles = VNDetectRectanglesRequest()
-            rectangles.maximumObservations = 32
-            rectangles.minimumSize = 0.025
-            rectangles.minimumConfidence = 0.55
-            rectangles.minimumAspectRatio = 0.035
-            rectangles.maximumAspectRatio = 1.0
-            let contours = VNDetectContoursRequest()
-            contours.maximumImageDimension = 2048
-            contours.contrastAdjustment = 1.0
-            contours.detectsDarkOnLight = true
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             // Some runtimes cannot service contours. Keep independent text results in that case.
             #if os(macOS)
-            for request: VNRequest in [text, rectangles, contours] { request.usesCPUOnly = true }
+            text.usesCPUOnly = true
             #endif
             try handler.perform([text])
-            try? handler.perform([rectangles])
-            try? handler.perform([contours])
             var candidates: [OCRCandidate] = (text.results ?? []).compactMap { item in
                 guard let top = item.topCandidates(1).first else { return nil }
                 return OCRCandidate(text: top.string, confidence: top.confidence, rectangle: item.boundingBox)
@@ -111,15 +99,36 @@ enum OfflineVision {
                     }
                 }
             }
-            // This is only a bounding-box candidate. Dimension/leader lines may be mistaken for an outline.
-            let rect = (rectangles.results ?? []).max(by: {
-                $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
-            })?.boundingBox
-            let circles = Self.circleCandidates(from: contours.results ?? [], imageWidth: Double(cgImage.width), imageHeight: Double(cgImage.height))
-            return RecognitionResult(candidates: candidates, rectangle: rect, circles: circles,
-                                     ordinateDrawing: OrdinateReader.read(candidates, circles: circles, views: (rectangles.results ?? []).map(\.boundingBox), raster: RingImage(cgImage)),
-                                     diagnostics: "文字候補\(candidates.count)件・矩形候補\((rectangles.results ?? []).count)件・丸穴候補\(circles.count)件")
+            return geometry(cgImage: cgImage, candidates: candidates)
         }.value
+    }
+
+    static func geometry(cgImage: CGImage, candidates: [OCRCandidate]) -> RecognitionResult {
+        let rectangles = VNDetectRectanglesRequest()
+        rectangles.maximumObservations = 32
+        rectangles.minimumSize = 0.025
+        rectangles.minimumConfidence = 0.55
+        rectangles.minimumAspectRatio = 0.035
+        rectangles.maximumAspectRatio = 1.0
+        let contours = VNDetectContoursRequest()
+        contours.maximumImageDimension = 2048
+        contours.contrastAdjustment = 1.0
+        contours.detectsDarkOnLight = true
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        #if os(macOS)
+        rectangles.usesCPUOnly = true
+        contours.usesCPUOnly = true
+        #endif
+        try? handler.perform([rectangles])
+        try? handler.perform([contours])
+        // This is only a bounding-box candidate. Dimension/leader lines may be mistaken for an outline.
+        let rect = (rectangles.results ?? []).max(by: {
+            $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
+        })?.boundingBox
+        let circles = Self.circleCandidates(from: contours.results ?? [], imageWidth: Double(cgImage.width), imageHeight: Double(cgImage.height))
+        return RecognitionResult(candidates: candidates, rectangle: rect, circles: circles,
+                                 ordinateDrawing: OrdinateReader.read(candidates, circles: circles, views: (rectangles.results ?? []).map(\.boundingBox), raster: RingImage(cgImage)),
+                                 diagnostics: "文字候補\(candidates.count)件・矩形候補\((rectangles.results ?? []).count)件・丸穴候補\(circles.count)件")
     }
 
     private static func enhanceForText(_ original: CGImage) -> CGImage? {
