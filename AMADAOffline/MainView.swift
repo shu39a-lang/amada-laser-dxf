@@ -334,8 +334,17 @@ struct MainView: View {
                                 (drawing.width > 0 ? 1 : 0) + (drawing.height > 0 ? 1 : 0)
                             let localScore = localDrawing.holes.count * 3 +
                                 (localDrawing.width > 0 ? 1 : 0) + (localDrawing.height > 0 ? 1 : 0)
-                            if localScore > cloudScore &&
-                                localDrawing.geometryIssues.isEmpty {
+                            // A partially recognized hole may have an unknown
+                            // diameter. geometryIssues then reports an error, but
+                            // rejecting the entire drawing discards useful X/Y
+                            // candidates. Keep these visibly unverified instead.
+                            let centersInBounds = localDrawing.width > 0 &&
+                                localDrawing.height > 0 &&
+                                localDrawing.holes.allSatisfy { hole in
+                                    hole.x >= 0 && hole.x <= localDrawing.width &&
+                                    hole.y >= 0 && hole.y <= localDrawing.height
+                                }
+                            if localScore > cloudScore && centersInBounds {
                                 drawing.width = localDrawing.width
                                 drawing.height = localDrawing.height
                                 drawing.holes = localDrawing.holes
