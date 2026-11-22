@@ -23,6 +23,11 @@ workflows:
       - name: Set up signing
         script: |
           xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT" --archive-method app-store
+      - name: Restore original app icon to Xcode asset catalog
+        script: |
+          set -e
+          cp "$CM_BUILD_DIR/AppIcon.png" "$CM_BUILD_DIR/SHEET_MASTER_iOS/SHEETMASTER/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+          test -s "$CM_BUILD_DIR/SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html"
       - name: Build IPA
         script: |
           xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
