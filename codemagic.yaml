@@ -1,13 +1,12 @@
 workflows:
-  ios-testflight:
-    name: SHEET MASTER - iOS TestFlight
+  sheet-master-html-preserved:
+    name: SHEET MASTER HTML Preserved - TestFlight
     triggering:
       events:
         - push
       branch_patterns:
         - pattern: main
           include: true
-      cancel_previous_builds: true
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
@@ -17,51 +16,44 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.shu39a.amadaoffline
       vars:
-        XCODE_PROJECT: "AMADAOffline.xcodeproj"
-        XCODE_SCHEME: "AMADAOffline"
+        XCODE_PROJECT: SHEET_MASTER_iOS/SHEETMASTER.xcodeproj
+        XCODE_SCHEME: SHEETMASTER
       xcode: latest
     scripts:
-      - name: Apply Apple signing profiles
-        script: |
-          set -euo pipefail
-          xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT" --archive-method app-store --code-signing-setup-verbose-logging
-          echo "=== App Store signing settings ==="
-          xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release -showBuildSettings 2>/dev/null | grep -E ' (CODE_SIGN_ENTITLEMENTS|CODE_SIGN_IDENTITY|CODE_SIGN_STYLE|DEVELOPMENT_TEAM|PROVISIONING_PROFILE_SPECIFIER|PRODUCT_BUNDLE_IDENTIFIER) =' | sort -u || true
-      - name: Set build number above latest App Store Connect upload
+      - name: Verify original HTML and Xcode project
         script: |
           set -euo pipefail
           cd "$CM_BUILD_DIR"
-          # Build numbers are unique per app version; do not reuse Codemagic's workflow BUILD_NUMBER.
-          APP_STORE_APPLE_ID=6837735676
-          LATEST_BUILD=$(app-store-connect get-latest-build-number "$APP_STORE_APPLE_ID" --version-string 1.0.0)
-          [[ "$LATEST_BUILD" =~ ^[0-9]+$ ]] || { echo "Cannot determine latest TestFlight build: $LATEST_BUILD"; exit 1; }
-          NEXT_BUILD=$((LATEST_BUILD + 1))
-          echo "Latest Apple build=$LATEST_BUILD; assigning build=$NEXT_BUILD"
-          xcrun agvtool new-version -all "$NEXT_BUILD"
-      - name: Verify Xcode compilation before signing
+          printf '%s  %s\n' '1f4d4313772e446106e939aa1c3266e8e8d11eb6f8b3ec542dfdc0a7e43ea71d' 'SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html' | shasum -a 256 -c -
+          plutil -lint "$XCODE_PROJECT/project.pbxproj" "SHEET_MASTER_iOS/SHEETMASTER/Info.plist"
+          xcodebuild -list -project "$XCODE_PROJECT"
+      - name: Set unique TestFlight build number
         script: |
-          set -o pipefail
-          xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
-            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee /tmp/sheet-master-compile.log || {
-            echo '=== SHEET MASTER COMPILER ERRORS ==='
-            grep -nE 'error:|fatal error:|BUILD FAILED|no such module' /tmp/sheet-master-compile.log | tail -n 80 || true
-            exit 1
-          }
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          LATEST=$(app-store-connect get-latest-build-number 6837735676 --version-string 1.0.0)
+          [[ "$LATEST" =~ ^[0-9]+$ ]] || { echo "Cannot verify latest Apple build number"; exit 1; }
+          NEXT=$((LATEST + 1))
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT" SHEET_MASTER_iOS/SHEETMASTER/Info.plist
+          echo "TestFlight build number: $NEXT"
+      - name: Compile Swift and Firebase dependencies without signing
+        script: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME"
+          xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+      - name: Set up signing
+        script: |
+          xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT" --archive-method app-store
+      - name: Restore original app icon to Xcode asset catalog
+        script: |
+          set -e
+          cp "$CM_BUILD_DIR/AppIcon.png" "$CM_BUILD_DIR/SHEET_MASTER_iOS/SHEETMASTER/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
+          test -s "$CM_BUILD_DIR/SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html"
       - name: Build IPA
         script: |
-          set -o pipefail
-          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME" --disable-xcpretty -v 2>&1 | tee /tmp/sheet-master-archive.log || {
-            echo '=== SHEET MASTER ARCHIVE ERRORS ==='
-            grep -nEi 'error:|fatal error:|provision|entitlement|signing|failed|requires a|doesn.t include|not found' /tmp/sheet-master-archive.log | tail -n 100 || true
-            exit 1
-          }
+          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
-      - /tmp/sheet-master-compile.log
-      - /tmp/sheet-master-archive.log
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
     publishing:
       app_store_connect:
         auth: integration
