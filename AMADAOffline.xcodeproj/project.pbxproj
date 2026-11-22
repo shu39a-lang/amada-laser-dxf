@@ -4,6 +4,8 @@
  classes = {};
  objectVersion = 56;
  objects = {
+  C00000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+  C00000000000000000000002 = {isa = PBXBuildFile; fileRef = C00000000000000000000001; };
   B00000000000000000000010 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git"; requirement = {kind = upToNextMajorVersion; minimumVersion = 11.0.0; }; };
   B00000000000000000000011 = {isa = XCSwiftPackageProductDependency; package = B00000000000000000000010; productName = FirebaseAppCheck; };
   B00000000000000000000016 = {isa = XCSwiftPackageProductDependency; package = B00000000000000000000010; productName = FirebaseCore; };
@@ -16,7 +18,7 @@
   A00000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = A00000000000000000000021; buildPhases = (A00000000000000000000005,A00000000000000000000007,B00000000000000000000013,); packageProductDependencies = (B00000000000000000000011,B00000000000000000000016,); buildRules = (); dependencies = (); name = AMADAOffline; productName = AMADAOffline; productReference = A00000000000000000000009; productType = "com.apple.product-type.application"; };
   A00000000000000000000003 = {isa = PBXGroup; children = (A00000000000000000000006,A00000000000000000000004); sourceTree = "<group>"; };
   A00000000000000000000004 = {isa = PBXGroup; children = (A00000000000000000000009,); name = Products; sourceTree = "<group>"; };
-  A00000000000000000000006 = {isa = PBXGroup; children = (B00000000000000000000014,A00000000000000000000010,A00000000000000000000011,A00000000000000000000012,A00000000000000000000013,A00000000000000000000014,A00000000000000000000015,A00000000000000000000016,A00000000000000000000017); path = AMADAOffline; sourceTree = "<group>"; };
+  A00000000000000000000006 = {isa = PBXGroup; children = (B00000000000000000000014,A00000000000000000000010,A00000000000000000000011,A00000000000000000000012,A00000000000000000000013,A00000000000000000000014,A00000000000000000000015,A00000000000000000000016,A00000000000000000000017,C00000000000000000000001); path = AMADAOffline; sourceTree = "<group>"; };
   A00000000000000000000009 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AMADAOffline.app; sourceTree = BUILT_PRODUCTS_DIR; };
   A00000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AMADAOfflineApp.swift; sourceTree = "<group>"; };
   A00000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -28,7 +30,7 @@
   A00000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
   A00000000000000000000036 = {isa = PBXBuildFile; fileRef = A00000000000000000000016; };
   A00000000000000000000037 = {isa = PBXBuildFile; fileRef = A00000000000000000000017; };
-  A00000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000036,A00000000000000000000037); runOnlyForDeploymentPostprocessing = 0; };
+  A00000000000000000000007 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000036,A00000000000000000000037,C00000000000000000000002); runOnlyForDeploymentPostprocessing = 0; };
   A00000000000000000000030 = {isa = PBXBuildFile; fileRef = A00000000000000000000010; };
   A00000000000000000000031 = {isa = PBXBuildFile; fileRef = A00000000000000000000011; };
   A00000000000000000000032 = {isa = PBXBuildFile; fileRef = A00000000000000000000012; };
