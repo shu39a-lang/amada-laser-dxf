@@ -24,7 +24,7 @@ workflows:
         script: |
           set -euo pipefail
           cd "$CM_BUILD_DIR"
-          printf '%s  %s\n' '3cd908e98512da29ea7c2c826267a8623155b25304ce3ae3955bc94818522715' 'SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html' | shasum -a 256 -c -
+          printf '%s  %s\n' '5c738e90d9f8f1e173c9c09d1d5e22e8a5d7c31184aa233e2c43c108724616a6' 'SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html' | shasum -a 256 -c -
           plutil -lint "$XCODE_PROJECT/project.pbxproj" "SHEET_MASTER_iOS/SHEETMASTER/Info.plist"
           xcodebuild -list -project "$XCODE_PROJECT"
       - name: Set unique TestFlight build number

@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
+<!--
+引き継ぎメモ(SHEET MASTER・1ファイル版 v3: 平面切断用。自由形状(円弧・多角形・星形)/長穴/角穴/けがき/手書きの書き込みに対応)
+- このファイル1つで動きます。外部のライブラリはありません。
+- APIキーは、コードに入れないでください。利用者が、画面右上の「設定」で入力します(端末内に保存)。
+- 通信先は https://api.anthropic.com/v1/messages だけです。図面の写真が送信されます。
+- 設定画面の「APIキーをお持ちでない方へ」にある購入・作成ページへのリンクは、スクリプト内の KEY_LINKS.on を false にすると、リンクなしの文章だけになります(審査で指摘された場合に使います)。
+-->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -23,9 +30,12 @@ main{padding:8px 16px;max-width:640px;margin:0 auto}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:5px 0}
 input[type=text],input[type=number],input[type=password]{font:inherit;color:var(--tx);background:#1c1c1c;border:1px solid var(--bd);border-radius:8px;padding:8px;min-width:0;box-sizing:border-box}
 .row input{width:55%;text-align:right}
-.holes{display:grid;grid-template-columns:1fr 1fr 1fr 34px;gap:6px;align-items:center;margin-bottom:6px}
-.holes input{width:100%}
-.holes small{color:var(--sub);font-size:12px}
+.g{display:grid;gap:5px;align-items:end;margin-bottom:8px}
+.c{display:block;min-width:0}.c small{display:block;color:var(--sub);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g input,.g select{width:100%;padding:8px 3px;font-size:14px}
+select{font:inherit;color:var(--tx);background:#1c1c1c;border:1px solid var(--bd);border-radius:8px;min-width:0;box-sizing:border-box}
+.g button{padding:8px 0}
+details summary{cursor:pointer;color:var(--ac);font-weight:600}
 button{font:inherit;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:10px 14px}
 button.pri{background:var(--ac);color:#111;border-color:var(--ac);font-weight:600}
 button:disabled{opacity:.4}
@@ -39,7 +49,7 @@ ol{padding-left:1.4em;margin:8px 0}
 .ck input{margin-top:5px;width:20px;height:20px}
 pre{overflow-x:auto;background:#000;color:var(--ac);padding:8px;border-radius:8px;font-size:12px;max-height:150px;margin:8px 0}
 svg{width:100%;height:auto;display:block}
-.bad{background:#a3122a!important;border-color:#ff4d5e!important;border-radius:8px}.row.bad,.holes.bad{padding:6px 8px}
+.bad{background:#a3122a!important;border-color:#ff4d5e!important;border-radius:8px}.row.bad,.g.bad{padding:6px 8px}
 .logo{text-align:center;padding:14px 0 10px}.logo b{display:block;font:900 34px/1.1 "Arial Black",Impact,sans-serif;letter-spacing:.08em;color:var(--ac)}.logo b span{color:#fff}.logo small{display:block;margin-top:6px;color:var(--sub);font-size:14px}
 </style>
 </head>
@@ -52,55 +62,152 @@ svg{width:100%;height:auto;display:block}
 <script>
 const TITLES=["① 図面を撮影","② 読み取り結果の確認","③ DXFを作成","④ パソコンへ送る","⑤ 会社PCでの作業"];
 const METHODS=[
- {n:"クラウド",s:["前の画面の「保存」を押して、DXFファイルを保存する","保存したファイルを、OneDrive や Googleドライブなどに入れる","会社のパソコンで同じクラウドを開き、ダウンロードする","作業用フォルダ(デスクトップなど)に置く"]},
+ {n:"クラウド",s:["前の画面の「保存」を押して、DXFファイルとメモを保存する","保存したファイルを、OneDrive や Googleドライブなどに入れる","会社のパソコンで同じクラウドを開き、ダウンロードする","作業用フォルダ(デスクトップなど)に置く"]},
  {n:"メール",s:["前の画面の「共有」か「保存」で、DXFファイルを作る","そのファイルを、自分宛てのメールに添付して送る(添付できないときは、下の「メールで送る」で本文に入れる)","会社のパソコンで、添付ファイルを保存する","本文に入れて送った場合は、メモ帳に貼り付けて「図番.dxf」(種類:すべてのファイル)で保存する"]},
  {n:"USBケーブル",s:["iPhoneをパソコンにつなぎ、「信頼」を選ぶ","前の画面の「保存」で、iPhoneのファイルに保存する","パソコンの「Appleデバイス」アプリなどから、ファイルを取り出す","作業用フォルダに置く"]}];
-const CHECK=["DXFをパソコンの作業フォルダに保存した(拡張子は .dxf)","加工用ソフト(CAM)を起動し、DXFを読み込んだ","単位がmm、原点が左下になっているか確認した","外形と穴の寸法を、図面と照合した","材質と板厚を設定し、加工条件を選んだ","機械用のプログラムを作成した","USBに保存し、機械に入力する前に現場の担当者に確認してもらった"];
-const PROMPT=`You are reading a Japanese mechanical drawing of a sheet-metal part.
-Return ONLY a JSON object (no markdown) with keys:
-partName (string), drawingNo (string), material (string), thickness (number, mm),
-width (number, mm, X direction of the plan view), height (number, mm, Y direction of the plan view),
-chamfer (number, mm, corner chamfer C value, 0 if none),
-holes (array of {"x":number,"y":number,"diameter":number}), notes (string, anything you were unsure about),
-xDims (array of numbers: every horizontal position dimension printed on the drawing, measured from the origin, including the overall width),
-yDims (same for vertical dimensions, including the overall height).
+const CHECK=["DXFとメモをパソコンの作業フォルダに保存した(DXFの拡張子は .dxf)","加工用ソフト(CAM)を起動し、DXFを読み込んだ","単位がmm、原点が左下になっているか確認した","外形・穴・切り抜きの形と寸法を、図面と照合した","材質と板厚を設定し、加工条件を選んだ","機械用のプログラムを作成した","USBに保存し、機械に入力する前に現場の担当者に確認してもらった"];
+const PROMPT=`You are reading a Japanese drawing of a FLAT sheet-metal plate that will be cut on a laser cutting machine. Only the flat cut shape matters. If the drawing is a bent part, read the flat pattern (展開図) if one is printed; otherwise put "曲げ部品で展開図なし" in unsupported.
+Return ONLY one JSON object (no markdown, no comments).
+Keys:
+partName, drawingNo, material (strings); thickness (number, mm).
+width, height (numbers, mm): overall size (bounding box) of the plate in X and Y.
+chamfer (number): corner chamfer C value if the outline is a plain rectangle with equal corner chamfers, else 0.
+shape: array of outline points {"s","x","y","r","dir"} for ANY shape that is not just a rectangle/round hole/slot, such as a star, polygon, notched or stepped outline, rounded corners, arcs.
+  s = shape number. 0 = the OUTER outline (use only if the outer outline is not a plain rectangle with equal chamfers). 1, 2, 3... = each inner cut-out that is not a round hole, slot or axis-aligned rectangle. List the vertices of one shape consecutively, in order around the shape.
+  x, y = vertex position in mm from the origin.
+  r, dir = describe the edge going FROM this vertex TO the next vertex (the last vertex connects back to the first). Straight edge: r=0, dir="". Arc edge: r = arc radius in mm; dir = direction of travel along the arc as seen on the drawing: "ccw" (counter-clockwise) or "cw" (clockwise); append "_big" (e.g. "ccw_big") only if the arc is longer than 180 degrees.
+  A rounded corner = two vertices at the tangent points, the first with the arc r/dir. A semicircular end = two vertices at the ends of the diameter, r = half the diameter. A round plate = two vertices (0, D/2) and (D, D/2), both with r=D/2 and dir="ccw".
+holes: [{"x","y","diameter"}] round holes, center positions. Compute hole positions from pitch circles (PCD), equal pitches or symmetric layouts and write the computed centers.
+slots: [{"x","y","length","width","angle"}] long holes (長穴): center, overall length, width, angle of the long axis from the X axis (0 or 90).
+rects: [{"x","y","w","h"}] rectangular holes (角穴) with sides parallel to X/Y: center, size along X (w) and along Y (h). Tilted rectangles go into shape.
+scribes: [{"x1","y1","x2","y2"}] scribe / marking lines (けがき, 罫書き) that the laser should mark, not cut.
+texts: [{"text","x","y","h","angle"}] text to be marked by the laser (part numbers, symbols): text, lower-left position, character height in mm, rotation in degrees.
+hand: array of short Japanese strings: every HANDWRITTEN mark on the drawing (pen or pencil additions, corrections, crossed-out values, added shapes, arrows, memos). When a printed dimension is crossed out and replaced by hand, use the hand-written (newer) value in the data above AND list it here as "手書き修正: 旧→新(場所)". When a handwritten addition is a cut shape or scribe, include it in the data above AND list it here.
+extras: array of short Japanese strings for other printed items that matter: quantity, tolerances, surface treatment, burr direction, notes (注記).
+unsupported: array of strings: shapes or features you could NOT express in the fields above (ellipses, splines, countersinks, engraving artwork, unclear or hidden dimensions), with where they are.
+notes (string): anything you were unsure about.
+xDims, yDims: arrays of numbers: every horizontal / vertical position dimension printed on the drawing, measured from the origin, including the overall size.
 Rules:
-- Origin is the bottom-left corner of the plan-view outline. x and y are hole CENTERS from that origin, in mm.
-- Expand quantity notations such as "2-φ6.5" or "5-M3x0.5" into individual holes and locate each one from the dimension lines.
-- For tapped holes M3x0.5 use diameter 2.5. For other tapped holes use the standard tap-drill diameter, or 0 if unsure.
-- Ignore handwritten red annotations.
-- If a value cannot be read, use 0 or an empty string and mention it in notes. Never guess silently.`;
-const blank=()=>({partName:"",drawingNo:"",material:"",thickness:0,width:0,height:0,chamfer:0,holes:[],notes:""});
-const S={step:0,url:"",blob:null,busy:false,spec:blank(),method:0,checked:{},flags:[],confirmed:false,prog:"",runs:[],cl:{},red:{},redo:{},showCL:false,skipCL:false,showHist:false,showSet:false,fav:{},q:[],reads:[],meta:[],msg:"",abort:null,tier:"quick",t0:0,found:0,tick:null};
+- Origin = bottom-left corner of the plate (its bounding box). All x, y are in mm from that origin.
+- Expand notations such as "2-φ6.5" into individual entries and locate each one from the dimension lines.
+- M3x0.5 tapped hole: holes diameter 2.5 (note the tap in extras). Other taps: standard tap-drill diameter, or 0 if unsure.
+- Do not invent values. If a value cannot be read, use 0 or "" and say so in notes. Never guess silently.`;
+
+/* ---- 切断データの種類(表形式で定義) ---- */
+const DIRS=[["","直"],["ccw","左"],["cw","右"],["ccw_big","左大"],["cw_big","右大"]];
+const G={
+ shape:{p:"o",n:"形状点",l:"自由形状(外形・切り抜き)",cols:[["s","形状番号"],["x","X"],["y","Y"],["r","円弧R"],["dir","円弧","d"]],b:()=>({s:0,x:0,y:0,r:0,dir:""}),note:"形状番号 0 が外形、1以上が切り抜きです。点は順番に並べ、「円弧」は、その点から次の点までの辺の種類です(直=直線 / 左=反時計回りの円弧 / 右=時計回りの円弧 / 大=180°超の円弧)。"},
+ holes:{p:"h",n:"穴",l:"丸穴(中心のX, Y と 直径Φ)",cols:[["x","X"],["y","Y"],["diameter","Φ"]],b:()=>({x:0,y:0,diameter:0})},
+ slots:{p:"s",n:"長穴",l:"長穴",cols:[["x","中心X"],["y","中心Y"],["length","全長"],["width","幅"],["angle","向き°"]],b:()=>({x:0,y:0,length:0,width:0,angle:0}),note:"向きは、長い方向。横長なら0、縦長なら90です。"},
+ rects:{p:"r",n:"角穴",l:"角穴",cols:[["x","中心X"],["y","中心Y"],["w","X方向"],["h","Y方向"]],b:()=>({x:0,y:0,w:0,h:0})},
+ scribes:{p:"k",n:"けがき線",l:"けがき線(切らずに、線を引く)",cols:[["x1","X1"],["y1","Y1"],["x2","X2"],["y2","Y2"]],b:()=>({x1:0,y1:0,x2:0,y2:0})},
+ texts:{p:"m",n:"けがき文字",l:"けがき文字",cols:[["text","文字","t"],["x","X"],["y","Y"],["h","高さ"],["angle","角度°"]],b:()=>({text:"",x:0,y:0,h:0,angle:0}),note:"文字の左下の位置です。日本語は、DXFで文字化けすることがあります。"},
+ hand:{p:"y",n:"手書き",l:"図面の手書きの書き込み",list:true,note:"手書きの修正や追加です。データに反映したものも、反映していないものも、ここに出ます。1つずつ、図面と照合してください。"},
+ extras:{p:"x",n:"注記",l:"注記・その他の記載",list:true},
+ unsupported:{p:"z",n:"未対応",l:"このアプリで扱えない記載",list:true,note:"図面にあるのに、このアプリでは図形にできないものです。会社のCAMや手作業で、対応が必要です。"}};
+const GK=Object.keys(G),NUMG=GK.filter(k=>!G[k].list),LISTS=GK.filter(k=>G[k].list);
+const blank=()=>{const o={partName:"",drawingNo:"",material:"",thickness:0,width:0,height:0,chamfer:0,notes:"",xDims:[],yDims:[]};GK.forEach(k=>o[k]=[]);return o;};
+function fill(s){const o=Object.assign(blank(),s||{});GK.forEach(k=>{if(!Array.isArray(o[k]))o[k]=[];});return o;}
+const S={step:0,url:"",blob:null,busy:false,spec:blank(),method:0,checked:{},flags:[],confirmed:false,runs:[],cl:{},red:{},redo:{},open:{},showCL:false,skipCL:false,showHist:false,showSet:false,fav:{},q:[],reads:[],meta:[],msg:"",abort:null,tier:"default",t0:0,tick:null};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const f=v=>String(+(+v).toFixed(4));
 const ok=()=>S.spec.width>0&&S.spec.height>0;
 
-function outline(s){const{width:w,height:h,chamfer:c}=s;return c>0?[[c,0],[w-c,0],[w,c],[w,h-c],[w-c,h],[c,h],[0,h-c],[0,c]]:[[0,0],[w,0],[w,h],[0,h]];}
-function warnings(){const s=S.spec,w=[...S.flags];
+/* ---- 形状の計算 ---- */
+function shapes(s){const m=new Map();s.shape.forEach(p=>{const k=Math.round(p.s);if(!m.has(k))m.set(k,[]);m.get(k).push(p);});return[...m.entries()].sort((a,b)=>a[0]-b[0]).map(([k,pts])=>({s:k,pts}));}
+function outerPts(s){const o=shapes(s).find(x=>x.s===0);return o&&o.pts.length>=2?o.pts:null;}
+function arcOf(p,q){if(!(p.r>0)||!p.dir)return null;
+ const dx=q.x-p.x,dy=q.y-p.y,c=Math.hypot(dx,dy);if(c<1e-9)return null;
+ const r=Math.max(p.r,c/2),h=Math.sqrt(Math.max(0,r*r-c*c/4)),ccw=p.dir.startsWith("ccw"),big=p.dir.endsWith("big"),sg=(ccw?1:-1)*(big?-1:1);
+ const cx=(p.x+q.x)/2+sg*(-dy/c)*h,cy=(p.y+q.y)/2+sg*(dx/c)*h;
+ return{cx,cy,r,ccw,big,a1:Math.atan2(p.y-cy,p.x-cx),a2:Math.atan2(q.y-cy,q.x-cx),small:p.r<c/2-0.01};}
+function samplePts(pts){const out=[];pts.forEach((p,i)=>{const q=pts[(i+1)%pts.length];out.push([p.x,p.y]);const a=arcOf(p,q);
+ if(a){let d=a.a2-a.a1;if(a.ccw){while(d<=1e-9)d+=2*Math.PI;}else{while(d>=-1e-9)d-=2*Math.PI;}for(let k=1;k<24;k++){const t=a.a1+d*k/24;out.push([a.cx+a.r*Math.cos(t),a.cy+a.r*Math.sin(t)]);}}});return out;}
+function rectPoly(s){const{width:w,height:h,chamfer:c}=s;return c>0?[[c,0],[w-c,0],[w,c],[w,h-c],[w-c,h],[c,h],[0,h-c],[0,c]]:[[0,0],[w,0],[w,h],[0,h]];}
+function outerPoly(s){const o=outerPts(s);return o?samplePts(o):rectPoly(s);}
+function inPoly(x,y,P){let c=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const a=P[i],b=P[j];if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0])c=!c;}return c;}
+function segDist(px,py,x1,y1,x2,y2){const dx=x2-x1,dy=y2-y1,l=dx*dx+dy*dy;let t=l?((px-x1)*dx+(py-y1)*dy)/l:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-x1-t*dx,py-y1-t*dy);}
+function polyDist(x,y,P){let m=1e9;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];m=Math.min(m,segDist(x,y,a[0],a[1],b[0],b[1]));}return m;}
+function bbox(gk,o){
+ if(gk==="holes"){const r=o.diameter/2;return[o.x-r,o.y-r,o.x+r,o.y+r];}
+ if(gk==="slots"){const a=o.angle*Math.PI/180,c=Math.abs(Math.cos(a)),n=Math.abs(Math.sin(a)),hx=(o.length*c+o.width*n)/2,hy=(o.length*n+o.width*c)/2;return[o.x-hx,o.y-hy,o.x+hx,o.y+hy];}
+ return[o.x-o.w/2,o.y-o.h/2,o.x+o.w/2,o.y+o.h/2];}
+function warnings(){const s=S.spec,w=[...S.flags],t=s.thickness;
  if(!ok())w.push("外形寸法が未入力です");
- if(s.chamfer>0&&s.chamfer*2>=Math.min(s.width,s.height))w.push("角Cが外形に対して大きすぎます");
- s.holes.forEach((o,i)=>{const n=i+1;if(!(o.diameter>0)){w.push(`穴${n}: 直径が未入力です`);return;}
-  if(s.thickness>0&&o.diameter<s.thickness)w.push(`穴${n}: Φ${f(o.diameter)}は板厚${f(s.thickness)}mmより小さく、レーザーでは仕上がりが悪くなる可能性があります。ドリル加工も検討してください`);
-  const r=o.diameter/2;if(o.x-r<0||o.y-r<0||o.x+r>s.width||o.y+r>s.height)w.push(`穴${n}: 外形からはみ出しています`);});
+ if(s.chamfer>0&&!outerPts(s)&&s.chamfer*2>=Math.min(s.width,s.height))w.push("角Cが外形に対して大きすぎます");
+ const P=outerPoly(s),xs=P.map(p=>p[0]),ys=P.map(p=>p[1]);
+ if(outerPts(s)&&ok()){const bw=Math.max(...xs)-Math.min(...xs),bh=Math.max(...ys)-Math.min(...ys);
+  if(Math.abs(bw-s.width)>0.05||Math.abs(bh-s.height)>0.05)w.push(`外形の形状から求めた大きさ ${f(bw)}×${f(bh)} が、幅×高さ(${f(s.width)}×${f(s.height)})と合いません`);
+  if(Math.min(...xs)<-0.05||Math.min(...ys)<-0.05)w.push("外形の形状が、原点(左下)より、左または下にはみ出しています");}
+ shapes(s).forEach(sh=>{const nm=sh.s===0?"外形":`切り抜き${sh.s}`;
+  const arcs=sh.pts.filter(p=>p.r>0&&p.dir).length;
+  if(sh.pts.length<3&&!(sh.pts.length===2&&arcs===2))w.push(`${nm}: 点が足りません(3点以上、または円弧2つの2点が必要です)`);
+  if(sh.s!==0&&sh.pts.length>=3&&ok()){const q=sh.pts[0];if(!inPoly(q.x,q.y,P)&&P.length>2)w.push(`${nm}: 外形の外側にある可能性があります`);}});
+ s.shape.forEach((p,i)=>{const n=`形状点${i+1}`,sh=shapes(s).find(x=>x.s===Math.round(p.s));if(!sh)return;const k=sh.pts.indexOf(p),q=sh.pts[(k+1)%sh.pts.length];
+  if(p.r>0&&!p.dir)w.push(`${n}: 円弧のRがあるのに、向きが未指定です(直線として扱います)`);
+  if(!(p.r>0)&&p.dir)w.push(`${n}: 円弧の向きがあるのに、Rが未入力です(直線として扱います)`);
+  if(Math.hypot(q.x-p.x,q.y-p.y)<0.01&&sh.pts.length>1)w.push(`${n}: 次の点と同じ位置です`);
+  const a=arcOf(p,q);if(a&&a.small)w.push(`${n}: 円弧のR${f(p.r)}が、2点の距離の半分より小さいため、半円に補正します`);
+  if(Math.round(p.s)!==p.s||p.s<0)w.push(`${n}: 形状番号が正しくありません`);});
+ s.holes.forEach((o,i)=>{const n=`穴${i+1}`;if(!(o.diameter>0)){w.push(`${n}: 直径が未入力です`);return;}
+  if(t>0&&o.diameter<t)w.push(`${n}: Φ${f(o.diameter)}は板厚${f(t)}mmより小さく、レーザーでは仕上がりが悪くなる可能性があります。ドリル加工も検討してください`);
+  if(t>0&&ok()&&inPoly(o.x,o.y,P)&&polyDist(o.x,o.y,P)-o.diameter/2<t-0.01)w.push(`${n}: 外形の縁に近すぎる可能性があります(縁まで ${f(Math.max(polyDist(o.x,o.y,P)-o.diameter/2,0))}mm。目安は板厚${f(t)}mm以上)`);});
+ s.slots.forEach((o,i)=>{const n=`長穴${i+1}`;if(!(o.length>0&&o.width>0))w.push(`${n}: 全長または幅が未入力です`);else if(o.length<o.width)w.push(`${n}: 全長が幅より短くなっています`);
+  if(o.angle!==0&&o.angle!==90)w.push(`${n}: 向きが0でも90でもありません(斜めの長穴は、DXFに出しますが、要確認です)`);});
+ s.rects.forEach((o,i)=>{if(!(o.w>0&&o.h>0))w.push(`角穴${i+1}: 大きさが未入力です`);});
+ s.scribes.forEach((o,i)=>{if(Math.hypot(o.x2-o.x1,o.y2-o.y1)<0.01)w.push(`けがき線${i+1}: 線の長さが0です`);});
+ s.texts.forEach((o,i)=>{const n=`けがき文字${i+1}`;if(!o.text)w.push(`${n}: 文字が空です`);if(!(o.h>0))w.push(`${n}: 高さが未入力です`);if(/[^\x20-\x7e]/.test(o.text))w.push(`${n}: 日本語などの文字は、DXFで文字化けする可能性があります`);});
+ ["holes","slots","rects"].forEach(gk=>s[gk].forEach((o,i)=>{const n=G[gk].n+(i+1);
+  if(ok()){const[a,b,c,d]=bbox(gk,o);if(a<-0.001||b<-0.001||c>s.width+0.001||d>s.height+0.001)w.push(`${n}: 外形からはみ出しています`);
+   else if(!inPoly(o.x,o.y,P))w.push(`${n}: 外形の外側にあります`);}}));
  const xd=s.xDims||[],yd=s.yDims||[],has=(a,v)=>a.some(q=>Math.abs(q-v)<0.01);
- if(xd.length){if(s.width>0&&!has(xd,s.width))w.push("(検算) 全幅が、図面の横方向の寸法一覧にありません");s.holes.forEach((o,i)=>{if(!has(xd,o.x))w.push(`(検算) 穴${i+1}: X ${f(o.x)} が、図面の横方向の寸法一覧にありません`);});}
- if(yd.length){if(s.height>0&&!has(yd,s.height))w.push("(検算) 全高が、図面の縦方向の寸法一覧にありません");s.holes.forEach((o,i)=>{if(!has(yd,o.y))w.push(`(検算) 穴${i+1}: Y ${f(o.y)} が、図面の縦方向の寸法一覧にありません`);});}
+ if(xd.length&&s.width>0&&!has(xd,s.width))w.push("(検算) 全幅が、図面の横方向の寸法一覧にありません");
+ if(yd.length&&s.height>0&&!has(yd,s.height))w.push("(検算) 全高が、図面の縦方向の寸法一覧にありません");
+ ["holes","slots","rects"].forEach(gk=>s[gk].forEach((o,i)=>{const n=G[gk].n+(i+1);
+  if(xd.length&&!has(xd,o.x))w.push(`(検算) ${n}: X ${f(o.x)} が、図面の横方向の寸法一覧にありません`);
+  if(yd.length&&!has(yd,o.y))w.push(`(検算) ${n}: Y ${f(o.y)} が、図面の縦方向の寸法一覧にありません`);}));
+ if(s.hand.length)w.push(`図面に手書きの書き込みが ${s.hand.length} 件あります。下の欄で、データに反映されているか確認してください`);
+ if(s.unsupported.length)w.push(`図面にあるのに、このアプリでは図形にできない記載が ${s.unsupported.length} 件あります。下の欄を確認してください`);
  return w;}
-function dxf(){const s=S.spec,o=["0","SECTION","2","ENTITIES"],p=outline(s),n=v=>(+v).toFixed(4);
- p.forEach((a,i)=>{const b=p[(i+1)%p.length];o.push("0","LINE","8","CUT_OUTLINE","10",n(a[0]),"20",n(a[1]),"30","0.0","11",n(b[0]),"21",n(b[1]),"31","0.0");});
- s.holes.filter(h=>h.diameter>0).forEach(h=>o.push("0","CIRCLE","8","CUT_HOLES","10",n(h.x),"20",n(h.y),"30","0.0","40",n(h.diameter/2)));
+
+function dxf(){const s=S.spec,o=["0","SECTION","2","ENTITIES"],n=v=>(+v).toFixed(4),deg=r=>((r*180/Math.PI)%360+360)%360;
+ const L=(ly,a,b,c,d)=>o.push("0","LINE","8",ly,"10",n(a),"20",n(b),"30","0.0","11",n(c),"21",n(d),"31","0.0");
+ const C=(ly,x,y,r)=>o.push("0","CIRCLE","8",ly,"10",n(x),"20",n(y),"30","0.0","40",n(r));
+ const A=(ly,x,y,r,a1,a2)=>o.push("0","ARC","8",ly,"10",n(x),"20",n(y),"30","0.0","40",n(r),"50",n(((a1%360)+360)%360),"51",n(((a2%360)+360)%360));
+ const path=(ly,pts)=>pts.forEach((p,i)=>{const q=pts[(i+1)%pts.length],a=arcOf(p,q);if(a){if(a.ccw)A(ly,a.cx,a.cy,a.r,deg(a.a1),deg(a.a2));else A(ly,a.cx,a.cy,a.r,deg(a.a2),deg(a.a1));}else L(ly,p.x,p.y,q.x,q.y);});
+ const sh=shapes(s),out=outerPts(s);
+ if(out)path("CUT_OUTLINE",out);else rectPoly(s).forEach((a,i,p)=>{const b=p[(i+1)%p.length];L("CUT_OUTLINE",a[0],a[1],b[0],b[1]);});
+ sh.filter(x=>x.s!==0&&x.pts.length>=3).forEach(x=>path("CUT_HOLES",x.pts));
+ s.holes.filter(h=>h.diameter>0).forEach(h=>C("CUT_HOLES",h.x,h.y,h.diameter/2));
+ s.slots.filter(h=>h.length>0&&h.width>0).forEach(h=>{const r=h.width/2;if(h.length<=h.width){C("CUT_HOLES",h.x,h.y,r);return;}
+  const a=h.angle*Math.PI/180,c=Math.cos(a),sn=Math.sin(a),d=(h.length-h.width)/2,x1=h.x-d*c,y1=h.y-d*sn,x2=h.x+d*c,y2=h.y+d*sn,nx=-sn*r,ny=c*r;
+  L("CUT_HOLES",x1+nx,y1+ny,x2+nx,y2+ny);L("CUT_HOLES",x1-nx,y1-ny,x2-nx,y2-ny);A("CUT_HOLES",x2,y2,r,h.angle-90,h.angle+90);A("CUT_HOLES",x1,y1,r,h.angle+90,h.angle+270);});
+ s.rects.filter(h=>h.w>0&&h.h>0).forEach(h=>{const a=h.x-h.w/2,b=h.y-h.h/2,c=h.x+h.w/2,d=h.y+h.h/2;L("CUT_HOLES",a,b,c,b);L("CUT_HOLES",c,b,c,d);L("CUT_HOLES",c,d,a,d);L("CUT_HOLES",a,d,a,b);});
+ s.scribes.filter(b=>Math.hypot(b.x2-b.x1,b.y2-b.y1)>0).forEach(b=>L("SCRIBE",b.x1,b.y1,b.x2,b.y2));
+ s.texts.filter(t=>t.text&&t.h>0).forEach(t=>o.push("0","TEXT","8","SCRIBE","10",n(t.x),"20",n(t.y),"30","0.0","40",n(t.h),"1",t.text.replace(/[\r\n]/g," "),"50",n(t.angle)));
  o.push("0","ENDSEC","0","EOF");return o.join("\n")+"\n";}
+function memo(){const s=S.spec,L=[];
+ L.push("SHEET MASTER メモ","図番: "+(s.drawingNo||"-")+"   品名: "+(s.partName||"-"),"材質: "+(s.material||"-")+"   板厚: "+f(s.thickness)+" mm","外形の大きさ: "+f(s.width)+" × "+f(s.height)+" mm"+(outerPts(s)?"  ※自由形状の外形":(s.chamfer>0?"  角C "+f(s.chamfer):"")));
+ const c=shapes(s).filter(x=>x.s!==0).length;L.push("切断: 丸穴"+s.holes.length+" / 長穴"+s.slots.length+" / 角穴"+s.rects.length+(c?" / 自由形状の切り抜き"+c:"")+(s.scribes.length||s.texts.length?" / けがき線"+s.scribes.length+" 文字"+s.texts.length:""));
+ if(s.hand.length){L.push("","【図面の手書きの書き込み】");s.hand.forEach(t=>L.push("・"+t));}
+ if(s.extras.length){L.push("","【注記・その他】");s.extras.forEach(t=>L.push("・"+t));}
+ if(s.unsupported.length){L.push("","【このアプリで扱えない記載(CAM・手作業で対応)】");s.unsupported.forEach(t=>L.push("・"+t));}
+ L.push("","※このメモとDXFは、必ず図面と照合してください。");return L.join("\n");}
 function fname(){return(S.spec.drawingNo||"part").replace(/[\/\\ ]/g,"-");}
+function pathD(pts,X,Y){let d="M"+X(pts[0].x)+" "+Y(pts[0].y);pts.forEach((p,i)=>{const q=pts[(i+1)%pts.length],a=arcOf(p,q);if(i===pts.length-1&&pts.length<2)return;d+=a?` A${a.r} ${a.r} 0 ${a.big?1:0} ${a.ccw?0:1} ${X(q.x)} ${Y(q.y)}`:` L${X(q.x)} ${Y(q.y)}`;});return d+"Z";}
 function svg(){const s=S.spec;if(!ok())return'<p class="sub">外形寸法を入れるとプレビューが出ます</p>';
- const p=Math.max(s.width,s.height)*.06,vw=s.width+p*2,vh=s.height+p*2,sw=Math.max(s.width,s.height)/250;
- const pts=outline(s).map(q=>(q[0]+p)+","+(vh-p-q[1])).join(" ");
- let h=`<svg viewBox="0 0 ${vw} ${vh}"><polygon points="${pts}" fill="none" stroke="currentColor" stroke-width="${sw*1.5}"/>`;
- s.holes.forEach(o=>{if(o.diameter>0)h+=`<circle cx="${o.x+p}" cy="${vh-p-o.y}" r="${o.diameter/2}" fill="none" stroke="var(--red)" stroke-width="${sw}"/>`;});
+ const W=s.width,H=s.height,p=Math.max(W,H)*.06,vw=W+p*2,vh=H+p*2,sw=Math.max(W,H)/250,X=x=>x+p,Y=y=>vh-p-y,out=outerPts(s);
+ let h=`<svg viewBox="0 0 ${vw} ${vh}">`;
+ h+=out?`<path d="${pathD(out,X,Y)}" fill="none" stroke="currentColor" stroke-width="${sw*1.5}"/>`:`<polygon points="${rectPoly(s).map(q=>X(q[0])+","+Y(q[1])).join(" ")}" fill="none" stroke="currentColor" stroke-width="${sw*1.5}"/>`;
+ shapes(s).filter(x=>x.s!==0&&x.pts.length>=3).forEach(x=>{h+=`<path d="${pathD(x.pts,X,Y)}" fill="none" stroke="var(--red)" stroke-width="${sw}"/>`;});
+ s.holes.forEach(o=>{if(o.diameter>0)h+=`<circle cx="${X(o.x)}" cy="${Y(o.y)}" r="${o.diameter/2}" fill="none" stroke="var(--red)" stroke-width="${sw}"/>`;});
+ s.slots.forEach(o=>{if(o.length>0&&o.width>0)h+=`<rect x="${X(o.x)-o.length/2}" y="${Y(o.y)-o.width/2}" width="${o.length}" height="${o.width}" rx="${o.width/2}" transform="rotate(${-o.angle} ${X(o.x)} ${Y(o.y)})" fill="none" stroke="var(--red)" stroke-width="${sw}"/>`;});
+ s.rects.forEach(o=>{if(o.w>0&&o.h>0)h+=`<rect x="${X(o.x)-o.w/2}" y="${Y(o.y)-o.h/2}" width="${o.w}" height="${o.h}" fill="none" stroke="var(--red)" stroke-width="${sw}"/>`;});
+ s.scribes.forEach(o=>{h+=`<line x1="${X(o.x1)}" y1="${Y(o.y1)}" x2="${X(o.x2)}" y2="${Y(o.y2)}" stroke="#4dd2ff" stroke-width="${sw}"/>`;});
+ s.texts.forEach(o=>{if(o.text&&o.h>0)h+=`<text x="${X(o.x)}" y="${Y(o.y)}" font-size="${o.h}" fill="#4dd2ff" transform="rotate(${-o.angle} ${X(o.x)} ${Y(o.y)})">${esc(o.text)}</text>`;});
  return h+"</svg>";}
 const warnHtml=()=>warnings().map(t=>`<div class="warn">⚠ ${esc(t)}</div>`).join("");
-
 const HK="zm_hist",FK="zm_fav";
 function hLoad(){try{return JSON.parse(localStorage.getItem(HK)||"[]");}catch(e){return[];}}
 function hStore(a){try{localStorage.setItem(HK,JSON.stringify(a.slice(0,50)));}catch(e){}}
@@ -108,71 +215,92 @@ function hSave(){const no=S.spec.drawingNo||"(図番なし)",a=hLoad().filter(x=
 function fLoad(){try{return JSON.parse(localStorage.getItem(FK)||"{}");}catch(e){return{};}}
 function fSave(){try{localStorage.setItem(FK,JSON.stringify(S.fav));}catch(e){}}
 function drawHist(o){const a=hLoad();
- o.innerHTML=`<div style="max-width:640px;margin:0 auto;padding:12px 16px 100px"><h1>履歴</h1><p class="sub">確認が終わった図面が、新しい順に並びます。選ぶと、確認済みの状態で呼び出せます。</p><div class="card">${a.length?a.map((x,i)=>`<div class="row"><button data-act="hl" data-i="${i}" style="flex:1;text-align:left">${esc(x.no)} ${esc(x.name||"")}<br><span class="sub">${new Date(x.t).toLocaleDateString("ja-JP")} / ${f(x.spec.width)}×${f(x.spec.height)} / 穴${x.spec.holes.length}</span></button><button data-act="hd" data-i="${i}" aria-label="削除">✕</button></div>`).join(""):'<p class="sub">まだ履歴がありません</p>'}</div></div><nav><button class="pri" data-act="hx">閉じる</button></nav>`;o.scrollTop=0;}
+ o.innerHTML=`<div style="max-width:640px;margin:0 auto;padding:12px 16px 100px"><h1>履歴</h1><p class="sub">確認が終わった図面が、新しい順に並びます。選ぶと、確認済みの状態で呼び出せます。</p><div class="card">${a.length?a.map((x,i)=>{const sp=fill(x.spec);return`<div class="row"><button data-act="hl" data-i="${i}" style="flex:1;text-align:left">${esc(x.no)} ${esc(x.name||"")}<br><span class="sub">${new Date(x.t).toLocaleDateString("ja-JP")} / ${f(sp.width)}×${f(sp.height)} / 穴${sp.holes.length}${sp.shape.length?" / 自由形状":""}</span></button><button data-act="hd" data-i="${i}" aria-label="削除">✕</button></div>`;}).join(""):'<p class="sub">まだ履歴がありません</p>'}</div></div><nav><button class="pri" data-act="hx">閉じる</button></nav>`;o.scrollTop=0;}
 const TL={quick:"速い",default:"標準",complex:"高精度"};
 function tierSeg(){return`<div class="seg">${["quick","default","complex"].map(t=>`<button data-act="tier" data-t="${t}" class="${S.tier===t?"on":""}">${TL[t]}</button>`).join("")}</div>`;}
-function tierCard(){return`<div class="card"><h2>読み取りの速さ</h2>${tierSeg()}<p class="sub" style="margin:4px 0 0">${{quick:"数秒が目安です。まず速く読んで、チェックリストで確認する使い方に向いています。",default:"十数秒〜かかることがあります。",complex:"いちばん慎重ですが、30秒以上かかることがあります。突き合わせの確認用におすすめです。"}[S.tier]}</p></div>`;}
+function tierCard(){return`<div class="card"><h2>読み取りの速さ</h2>${tierSeg()}<p class="sub" style="margin:4px 0 0">${{quick:"数秒〜十数秒が目安です。長方形と丸穴だけの、単純な図面向きです。",default:"十数秒〜かかることがあります。ふつうの図面は、これがおすすめです。",complex:"いちばん慎重ですが、30秒以上かかることがあります。星形や円弧など、複雑な形の図面におすすめです。"}[S.tier]}</p></div>`;}
 function v0(){return`<div class="logo"><b>SHEET <span>MASTER</span></b><small>図面を、確かなデータに</small></div>
 <div class="card">${S.url?`<img class="pv" src="${S.url}" alt="図面">`:'<p class="sub">図面の写真がありません</p>'}</div>
 <div class="seg"><button data-act="cam">撮影</button><button data-act="lib">写真から選ぶ</button></div>
 <input type="file" id="fc" accept="image/*" capture="environment" hidden><input type="file" id="fl" accept="image/*" hidden>
 ${(S.q||[]).map(t=>`<div class="warn">⚠ ${esc(t)}</div>`).join("")}
 <div class="card"><h2>撮影のコツ</h2><ul style="margin:4px 0;padding-left:1.3em"><li>真上から、図面全体が入るように撮る</li><li>影や照明の反射を避ける</li><li>紙を平らにして、寸法の数字が読める大きさで</li></ul><p class="sub" style="margin:4px 0 0">撮ったあと、明るさとブレを自動で調べます。写真を選んだら、下の「図面を読み取る」を押します。</p></div>
+<div class="card"><h2>読み取れるもの</h2><p class="sub" style="margin:0">外形(長方形・面取り・円弧・多角形・星形など)/丸穴・長穴・角穴/自由な形の切り抜き/けがき線・けがき文字/手書きの書き込みや修正/注記。<br>図形にできないもの(楕円など)は、「扱えない記載」として別に出して、必ず確認してもらいます。</p></div>
 ${tierCard()}
 <p style="display:flex;gap:8px;flex-wrap:wrap"><button data-act="hist">履歴から呼び出す(${hLoad().length})</button><button data-act="manual">写真なしで、手入力で進む</button></p>`;}
 const KM={thickness:"t",width:"w",height:"w",chamfer:"c"};
 function field(k,l,t){const kk=KM[k];return`<div class="row${kk&&S.red[kk]?" bad":""}" ${kk?`data-key="${kk}"`:""}><span>${l}</span><input ${t?'type="text"':'type="number" step="any" inputmode="decimal"'} data-k="${k}" value="${esc(S.spec[k])}"></div>`;}
-function v1(){const s=S.spec;return`${Object.keys(S.red).length?`<div class="card bad" id="redbn"><b>⚠ チェックリストで未チェックだった項目が、赤く表示されています。</b><div class="sub" style="color:#fff">直したら、もう一度チェックリストを開いて、確認してください。</div></div>`:""}<div class="card"><h2>読み取り結果(必ず図面と照合してください)</h2>
-${field("partName","品名",1)}${field("drawingNo","図番",1)}${field("material","材質",1)}${field("thickness","板厚 (mm)")}${field("width","幅 X (mm)")}${field("height","高さ Y (mm)")}${field("chamfer","角C (mm)")}</div>
-<div class="card"><h2>プレビュー(左下が原点)</h2><div id="pv">${svg()}</div></div>
-<div class="card${S.red.n?" bad":""}" data-key="n"><h2>穴(中心のX, Y と 直径Φ)</h2>${S.red.n?`<div class="sub" style="color:#fff">穴の数が違う可能性があります。穴を追加・削除してください。</div>`:""}
-${s.holes.map((h,i)=>`<div class="holes${S.red["h"+i]?" bad":""}" data-key="h${i}"><input type="number" step="any" inputmode="decimal" data-i="${i}" data-k="x" value="${h.x}" aria-label="X"><input type="number" step="any" inputmode="decimal" data-i="${i}" data-k="y" value="${h.y}" aria-label="Y"><input type="number" step="any" inputmode="decimal" data-i="${i}" data-k="diameter" value="${h.diameter}" aria-label="直径"><button data-act="del" data-i="${i}" aria-label="削除">✕</button></div>`).join("")}
-<button data-act="add">穴を追加</button></div>
+function gCard(gk){const g=G[gk],a=S.spec[gk];if(!a.length&&!S.open[gk])return"";
+ const cntBad=S.red.n&&!g.list;
+ const cell=(o,i,[k,lb,ty])=>`<label class="c"><small>${lb}</small>${ty==="d"?`<select data-g="${gk}" data-i="${i}" data-k="${k}">${DIRS.map(([v,n])=>`<option value="${v}" ${o[k]===v?"selected":""}>${n}</option>`).join("")}</select>`:ty==="t"?`<input type="text" data-g="${gk}" data-i="${i}" data-k="${k}" value="${esc(o[k])}">`:`<input type="number" step="any" inputmode="decimal" data-g="${gk}" data-i="${i}" data-k="${k}" value="${o[k]}">`}</label>`;
+ const rows=a.map((o,i)=>{const kk=g.p+i,bad=S.red[kk]?" bad":"";
+  if(g.list)return`<div class="g${bad}" data-key="${kk}" style="grid-template-columns:minmax(0,1fr) 34px"><input type="text" data-g="${gk}" data-i="${i}" value="${esc(o)}"><button data-act="del" data-g="${gk}" data-i="${i}" aria-label="削除">✕</button></div>`;
+  return`<div class="g${bad}" data-key="${kk}" style="grid-template-columns:repeat(${g.cols.length},minmax(0,1fr)) 34px">${g.cols.map(c=>cell(o,i,c)).join("")}<button data-act="del" data-g="${gk}" data-i="${i}" aria-label="削除">✕</button></div>`;}).join("");
+ return`<div class="card${cntBad?" bad":""}" ${cntBad?'data-key="n"':""}><h2>${g.l}</h2>${g.note?`<p class="sub" style="margin:0 0 6px">${g.note}</p>`:""}${cntBad?'<div class="sub" style="color:#fff">数が違う可能性があります。追加・削除してください。</div>':""}${rows}<button data-act="add" data-g="${gk}">${g.n}を追加</button></div>`;}
+function v1(){const s=S.spec,adds=GK.filter(k=>!s[k].length&&!S.open[k]);return`${Object.keys(S.red).length?`<div class="card bad" id="redbn"><b>⚠ チェックリストで未チェックだった項目が、赤く表示されています。</b><div class="sub" style="color:#fff">直したら、もう一度チェックリストを開いて、確認してください。</div></div>`:""}<div class="card"><h2>読み取り結果(必ず図面と照合してください)</h2>
+${field("partName","品名",1)}${field("drawingNo","図番",1)}${field("material","材質",1)}${field("thickness","板厚 (mm)")}${field("width","外形 幅 X (mm)")}${field("height","外形 高さ Y (mm)")}${field("chamfer","角C (mm)")}</div>
+${S.url?`<details class="card"><summary>元の図面を見る</summary><img class="pv" src="${S.url}" alt="図面" style="margin-top:8px"></details>`:""}
+<div class="card"><h2>プレビュー(左下が原点)</h2><div id="pv">${svg()}</div><p class="sub" style="margin-bottom:0">白: 外形 / 赤: 穴・切り抜き / 水色: けがき(切らない線・文字)</p></div>
+${GK.map(gCard).join("")}
+${adds.length?`<div class="card"><h2>追加する</h2><div style="display:flex;flex-wrap:wrap;gap:6px">${adds.map(k=>`<button data-act="open" data-g="${k}">＋ ${G[k].n}</button>`).join("")}</div></div>`:""}
 ${s.notes?`<div class="card"><h2>読み取りメモ</h2><div>${esc(s.notes)}</div></div>`:""}
 <div id="wn">${warnHtml()}</div>
 ${S.runs.length?`<div class="card"><h2>読み取り${S.runs.length}回の結果</h2>${S.runs.map((t,i)=>`<div class="sub">${i+1}回目: ${esc(t)}</div>`).join("")}${S.blob&&S.reads.length?`<div style="margin-top:8px">${tierSeg()}</div><button data-act="reread" ${S.reads.length>=3||S.busy?"disabled":""} style="width:100%;margin-top:8px">もう一度読み取って突き合わせる(${S.reads.length}/3)</button><p class="sub">手で直した数字は、読み取り結果で上書きされます。</p>`:""}</div>`:""}
 <div class="card"><h2>確認</h2>${S.skipCL?`<label class="ck" style="border:0"><input type="checkbox" id="cf" ${S.confirmed?"checked":""}><span>図面の数字と、すべて照合しました</span></label>`:`<button class="pri" data-act="cl" style="width:100%">チェックリストを開く(${clDone()}/${clItems().length})</button><p class="sub">${S.confirmed?"✔ 確認済みです":"全項目にチェックを入れると、次へ進めます"}</p>`}
 <label class="ck" style="border:0"><input type="checkbox" id="sk" ${S.skipCL?"checked":""}><span class="sub">チェックリストを省略する(慣れてから)</span></label></div>`;}
-function clItems(){const s=S.spec,fl=warnings(),a=[],c={};
+function lab(gk,o,i){const n=G[gk].n+(i+1),dn=d=>(DIRS.find(x=>x[0]===d)||["","直線"])[1];
+ switch(gk){
+  case"shape":return`${n}  形状${o.s===0?"0(外形)":o.s+"(切り抜き)"} / (${f(o.x)}, ${f(o.y)}) / 次の辺: ${o.r>0&&o.dir?"円弧 R"+f(o.r)+" "+dn(o.dir):"直線"}`;
+  case"holes":return`${n}  X ${f(o.x)} / Y ${f(o.y)} / Φ${f(o.diameter)}`;
+  case"slots":return`${n}  中心(${f(o.x)}, ${f(o.y)}) / 全長${f(o.length)} × 幅${f(o.width)} / 向き${f(o.angle)}°`;
+  case"rects":return`${n}  中心(${f(o.x)}, ${f(o.y)}) / ${f(o.w)} × ${f(o.h)}`;
+  case"scribes":return`${n}  (${f(o.x1)}, ${f(o.y1)})→(${f(o.x2)}, ${f(o.y2)})`;
+  case"texts":return`${n}  「${o.text}」 (${f(o.x)}, ${f(o.y)}) / 高さ${f(o.h)} / ${f(o.angle)}°`;
+  case"hand":return`手書き: ${o}(データに正しく反映されているか確認した)`;
+  case"extras":return`注記: ${o}`;
+  default:return`扱えない記載: ${o}(会社のCAMや手作業で対応する内容を確認した)`;}}
+function clItems(){const s=S.spec,fl=warnings().map(t=>t.replace("(検算) ","")),a=[],c={};
  s.holes.forEach(o=>{const d=f(o.diameter);c[d]=(c[d]||0)+1;});
- const sm=Object.entries(c).sort((x,y)=>y[0]-x[0]).map(([d,n])=>`Φ${d}×${n}`).join(", ");
- a.push({k:"t",l:`板厚  ${f(s.thickness)} mm`},{k:"w",l:`外形  幅 ${f(s.width)} × 高さ ${f(s.height)} mm`},{k:"c",l:`角C  ${f(s.chamfer)} mm`},{k:"n",l:`穴の数  合計 ${s.holes.length} 個(${sm})`});
- s.holes.forEach((o,i)=>a.push({k:"h"+i,l:`穴${i+1}  X ${f(o.x)} / Y ${f(o.y)} / Φ${f(o.diameter)}`,w:fl.some(t=>t.includes(`穴${i+1}:`))}));
+ const sm=Object.entries(c).sort((x,y)=>y[0]-x[0]).map(([d,n])=>`Φ${d}×${n}`).join(", "),ns=shapes(s).filter(x=>x.s!==0).length;
+ const cnt=[["穴",s.holes.length],["長穴",s.slots.length],["角穴",s.rects.length],["自由形状の切り抜き",ns],["けがき線",s.scribes.length],["けがき文字",s.texts.length]].filter(x=>x[1]).map(x=>x.join("")).join(" / ")||"なし";
+ a.push({k:"t",l:`板厚  ${f(s.thickness)} mm`},{k:"w",l:`外形の大きさ  幅 ${f(s.width)} × 高さ ${f(s.height)} mm${outerPts(s)?"(自由形状の外形)":""}`},{k:"c",l:`角C  ${f(s.chamfer)} mm`},{k:"n",l:`加工の数  ${cnt}${sm?"(穴: "+sm+")":""}`});
+ GK.forEach(gk=>s[gk].forEach((o,i)=>a.push({k:G[gk].p+i,l:lab(gk,o,i),w:fl.some(t=>t.startsWith(G[gk].n+(i+1)+":"))})));
  return a;}
 function clr(){S.cl={};S.red={};S.redo={};}
 const clDone=()=>clItems().filter(i=>S.cl[i.k]).length;
 function drawCL(){const o=$("#cl"),on=S.showCL||S.showHist;o.hidden=!on;if(!on){o.innerHTML="";return;}if(S.showHist){drawHist(o);return;}
  const it=clItems(),d=clDone();
  o.innerHTML=`<div style="max-width:640px;margin:0 auto;padding:12px 16px 100px"><h1>チェックリスト</h1><p class="sub">図面の数字を指で押さえながら、1つずつ照合してください。</p>${S.url?`<div class="card"><img class="pv" src="${S.url}" alt="図面"></div>`:""}<div class="card">${it.map(i=>`<label class="ck${S.red[i.k]?" bad":""}"><input type="checkbox" data-cl="${i.k}" ${S.cl[i.k]?"checked":""}><span>${i.w?"⚠ ":""}${esc(i.l)}${S.red[i.k]?"(要修正)":""}${S.redo[i.k]?"(修正済み・もう一度確認)":""}</span></label>`).join("")}</div></div><nav><button data-act="clx">閉じる</button><button id="clf" data-act="clfix" ${d===it.length?"disabled":""}>修正する(${it.length-d})</button><button id="cld" class="pri" data-act="cld" ${d===it.length?"":"disabled"}>${d}/${it.length} 完了</button></nav>`;o.scrollTop=0;}
-function v2(){const s=S.spec,n=s.holes.filter(h=>h.diameter>0).length;return`<div class="card"><h2>作成する内容</h2>
-<div class="row"><span>外形</span><span>${f(s.width)} × ${f(s.height)} mm</span></div>
-${s.chamfer>0?`<div class="row"><span>角C</span><span>${f(s.chamfer)}</span></div>`:""}
-<div class="row"><span>穴の数</span><span>${n} か所</span></div>
-${s.thickness>0?`<div class="row"><span>板厚</span><span>${f(s.thickness)} mm</span></div>`:""}
+function v2(){const s=S.spec,ns=shapes(s).filter(x=>x.s!==0).length,rows=[["丸穴",s.holes.length],["長穴",s.slots.length],["角穴",s.rects.length],["自由形状の切り抜き",ns],["けがき線",s.scribes.length],["けがき文字",s.texts.length]].filter(x=>x[1]).map(([n,v])=>`<div class="row"><span>${n}</span><span>${v} か所</span></div>`).join("");
+ return`<div class="card"><h2>作成する内容</h2>
+<div class="row"><span>外形の大きさ</span><span>${f(s.width)} × ${f(s.height)} mm</span></div>
+${outerPts(s)?`<div class="row"><span>外形</span><span>自由形状 ${outerPts(s).length}点</span></div>`:(s.chamfer>0?`<div class="row"><span>角C</span><span>${f(s.chamfer)}</span></div>`:"")}
+${rows}${s.thickness>0?`<div class="row"><span>板厚</span><span>${f(s.thickness)} mm</span></div>`:""}
 ${svg()}</div>
 <div class="card"><h2>DXFデータ</h2><pre>${esc(dxf())}</pre>
 <div class="seg"><button data-act="copy">コピー</button><button data-act="save" id="sv">保存(.dxf)</button><button data-act="share">共有</button></div>
-<p class="sub" id="msg">外形はレイヤー CUT_OUTLINE、穴は CUT_HOLES。単位はmm、原点は左下です。「保存」を押すと、「${esc(fname())}.dxf」の名前でそのまま保存されます。</p></div>`;}
+<p class="sub" id="msg">単位はmm、原点は左下です。レイヤー: 外形 CUT_OUTLINE / 穴・切り抜き CUT_HOLES / けがき SCRIBE。「保存」を押すと、「${esc(fname())}.dxf」の名前でそのまま保存されます。</p></div>
+<div class="card"><h2>メモ(材質・板厚・注記・手書きなど)</h2><pre>${esc(memo())}</pre><div class="seg"><button data-act="mcopy">コピー</button><button data-act="msave">保存(.txt)</button></div><p class="sub" id="msg2">DXFに入らない情報は、このメモで、会社のCAM担当者に渡してください。</p></div>`;}
 function v3(){const m=METHODS[S.method];return`<div class="seg">${METHODS.map((x,i)=>`<button data-act="meth" data-i="${i}" class="${i===S.method?"on":""}">${x.n}</button>`).join("")}</div>
 <div class="card"><h2>手順</h2><ol>${m.s.map(t=>`<li>${esc(t)}</li>`).join("")}</ol>
 <p class="sub">会社のパソコンは、クラウドやUSBの使用が制限されている場合があります。事前に確認してください。</p></div>
 <div class="card"><h2>いつもの送り方</h2><label class="ck" style="border:0"><input type="checkbox" id="fv" ${S.fav.method===S.method?"checked":""}><span>この送り方を、いつもの方法にする</span></label>
 <div class="row"><span>送り先メール</span><input type="text" id="fe" inputmode="email" value="${esc(S.fav.email||"")}" placeholder="自分のアドレス"></div>
-${S.fav.email?`<a href="mailto:${esc(S.fav.email)}?subject=${encodeURIComponent(fname()+".dxf")}&amp;body=${encodeURIComponent(dxf())}" style="display:block;text-align:center;padding:10px;border-radius:10px;background:var(--ac);color:#111;font-weight:600;text-decoration:none;margin-top:6px">メールで送る(DXFを本文に入れる)</a>`:""}</div>
-<p><button data-act="copy">DXFをもう一度コピー</button></p><p class="sub" id="msg"></p>`;}
+${S.fav.email?`<a href="mailto:${esc(S.fav.email)}?subject=${encodeURIComponent(fname()+".dxf")}&amp;body=${encodeURIComponent(dxf()+"\n\n-----\n"+memo())}" style="display:block;text-align:center;padding:10px;border-radius:10px;background:var(--ac);color:#111;font-weight:600;text-decoration:none;margin-top:6px">メールで送る(DXFとメモを本文に入れる)</a>`:""}</div>
+<p><button data-act="copy">DXFをもう一度コピー</button> <button data-act="mcopy">メモをコピー</button></p><p class="sub" id="msg"></p>`;}
 function v4(){return`<div class="card"><h2>ひとつずつ確認してチェック</h2>${CHECK.map((t,i)=>`<label class="ck"><input type="checkbox" data-c="${i}" ${S.checked[i]?"checked":""}><span>${esc(t)}</span></label>`).join("")}</div>
 <p class="sub">実際のソフトの画面に合わせて、この手順は後で書き換えます。機械用のNCデータは、会社のCAMで作成します。</p>`;}
 
 function render(){
  $("#ttl").textContent=TITLES[S.step];
  $(".bars").innerHTML=TITLES.map((_,i)=>`<i class="${i<=S.step?"on":""}"></i>`).join("");
- $("#main").innerHTML=(S.busy?`<div class="card"><div class="sub">⏳ 写真を解析しています。${{quick:"速いモードは数秒が目安です",default:"標準モードは十数秒〜かかることがあります",complex:"高精度モードは30秒以上かかることがあります"}[S.tier]}。止めたいときは、左下の「中止」を押してください。</div></div>`:"")+(S.msg?`<div class="card"><div class="warn">⚠ ${esc(S.msg)}</div></div>`:"")+[v0,v1,v2,v3,v4][S.step]();
+ $("#main").innerHTML=(S.busy?`<div class="card"><div class="sub">⏳ 写真を解析しています。${{quick:"速いモードは数秒〜十数秒が目安です",default:"標準モードは十数秒〜かかることがあります",complex:"高精度モードは30秒以上かかることがあります"}[S.tier]}。止めたいときは、左下の「中止」を押してください。</div></div>`:"")+(S.msg?`<div class="card"><div class="warn">⚠ ${esc(S.msg)}</div></div>`:"")+[v0,v1,v2,v3,v4][S.step]();
  const bk=$("#back");bk.style.visibility=(S.step||S.busy)?"visible":"hidden";bk.textContent=S.busy?"中止":"戻る";
  const p=$("#pri");p.textContent=S.busy?"読み取り中…":["図面を読み取る","この内容でDXFを作る","次へ:パソコンへ送る","次へ:会社PCでの作業","最初に戻る"][S.step];
  p.disabled=S.busy||(S.step===0&&!S.blob)||(S.step===1&&!(ok()&&S.confirmed));
  if(S.busy)tickDraw();window.scrollTo(0,0);}
 function live(){const a=$("#pv"),b=$("#wn");if(a)a.innerHTML=svg();if(b)b.innerHTML=warnHtml();const cb=document.querySelector('[data-act="cl"]');if(cb)cb.textContent=`チェックリストを開く(${clDone()}/${clItems().length})`;$("#pri").disabled=S.step===1&&!(ok()&&S.confirmed);}
-function note(t){const m=$("#msg");if(m)m.textContent=t;}
+function note(t,id){const m=$(id||"#msg");if(m)m.textContent=t;}
 
 function quality(c){const w=400,h=Math.max(3,Math.round(w*c.height/c.width)),t=document.createElement("canvas");t.width=w;t.height=h;const x=t.getContext("2d");x.drawImage(c,0,0,w,h);
  const d=x.getImageData(0,0,w,h).data,g=new Float32Array(w*h);let s=0;
@@ -184,25 +312,32 @@ function quality(c){const w=400,h=Math.max(3,Math.round(w*c.height/c.width)),t=d
  if(l/n<300)r.push("ピントが合っていない、またはブレている可能性があります。撮り直しを検討してください");
  return r;}
 function loadImage(file){const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{
- const k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
- c.getContext("2d").drawImage(im,0,0,c.width,c.height);S.url=c.toDataURL("image/jpeg",.85);S.q=quality(c);c.toBlob(b=>{S.blob=b;render();},"image/jpeg",.85);};im.src=r.result;};r.readAsDataURL(file);}
+ const k=Math.min(1,1800/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
+ c.getContext("2d").drawImage(im,0,0,c.width,c.height);S.url=c.toDataURL("image/jpeg",.88);S.q=quality(c);c.toBlob(b=>{S.blob=b;render();},"image/jpeg",.88);};im.src=r.result;};r.readAsDataURL(file);}
 
 const num=v=>+v||0,agree=(a,b)=>Math.abs(a-b)<0.01;
-function norm(r){return{partName:String(r.partName||""),drawingNo:String(r.drawingNo||""),material:String(r.material||""),thickness:num(r.thickness),width:num(r.width),height:num(r.height),chamfer:num(r.chamfer),notes:String(r.notes||""),xDims:(Array.isArray(r.xDims)?r.xDims:[]).map(num),yDims:(Array.isArray(r.yDims)?r.yDims:[]).map(num),holes:(Array.isArray(r.holes)?r.holes:[]).map(h=>({x:num(h.x),y:num(h.y),diameter:num(h.diameter)}))};}
+function norm(r){const o=blank();["partName","drawingNo","material","notes"].forEach(k=>o[k]=String(r[k]||""));["thickness","width","height","chamfer"].forEach(k=>o[k]=num(r[k]));
+ o.xDims=(Array.isArray(r.xDims)?r.xDims:[]).map(num);o.yDims=(Array.isArray(r.yDims)?r.yDims:[]).map(num);
+ NUMG.forEach(k=>{o[k]=(Array.isArray(r[k])?r[k]:[]).map(h=>{const b=G[k].b();Object.keys(b).forEach(c=>{const v=h&&h[c];b[c]=c==="dir"?(DIRS.some(d=>d[0]===v)?v:""):c==="text"?String(v==null?"":v):num(v);});return b;});});
+ LISTS.forEach(k=>{o[k]=(Array.isArray(r[k])?r[k]:[]).map(x=>String(x==null?"":x).trim()).filter(Boolean);});
+ const out=outerPts(o);if(out&&!(o.width>0&&o.height>0)){const P=samplePts(out),xs=P.map(p=>p[0]),ys=P.map(p=>p[1]);o.width=+(Math.max(...xs)-Math.min(...xs)).toFixed(4);o.height=+(Math.max(...ys)-Math.min(...ys)).toFixed(4);}
+ return o;}
 function merge(rs){const m=rs[0],fl=[];
  [["thickness","板厚"],["width","幅"],["height","高さ"],["chamfer","角C"]].forEach(([k,n])=>{const v=rs.map(r=>r[k]),b=v.find(x=>v.filter(y=>agree(x,y)).length>=2);if(b!==undefined)m[k]=b;if(!v.every(x=>agree(x,v[0])))fl.push(`${n}: 読み取りが一致しません(${v.map(f).join(" / ")})`);});
- m.holes.forEach((h,i)=>{const n=rs.filter(r=>r.holes.some(o=>agree(o.x,h.x)&&agree(o.y,h.y)&&agree(o.diameter,h.diameter))).length;if(n<rs.length)fl.push(`穴${i+1}: ${rs.length}回中${n}回しか一致しませんでした。図面で確認してください`);});
- if(new Set(rs.map(r=>r.holes.length)).size>1)fl.push(`穴の数が読み取りごとに違います(${rs.map(r=>r.holes.length).join(" / ")})`);
+ NUMG.forEach(gk=>{const g=G[gk],mt=(a,b)=>g.cols.every(([k,,ty])=>ty==="d"||ty==="t"?a[k]===b[k]:agree(a[k],b[k]));
+  m[gk].forEach((h,i)=>{const n=rs.filter(r=>r[gk].some(o=>mt(o,h))).length;if(n<rs.length)fl.push(`${g.n}${i+1}: ${rs.length}回中${n}回しか一致しませんでした。図面で確認してください`);});
+  if(new Set(rs.map(r=>r[gk].length)).size>1)fl.push(`${g.n}の数が読み取りごとに違います(${rs.map(r=>r[gk].length).join(" / ")})`);});
+ LISTS.forEach(gk=>{if(new Set(rs.map(r=>r[gk].length)).size>1)fl.push(`${G[gk].l}の件数が読み取りごとに違います(${rs.map(r=>r[gk].length).join(" / ")})。図面で確認してください`);});
  return fl;}
 const MODEL={quick:"claude-haiku-5-5",default:"claude-sonnet-5-5",complex:"claude-opus-5-5"};
 function getKey(){try{return localStorage.getItem("zm_key")||"";}catch(e){return window.__zk||"";}}
 function setKey(v){window.__zk=v;try{if(v)localStorage.setItem("zm_key",v);else localStorage.removeItem("zm_key");}catch(e){}}
-function errText(e){const c=e&&e.code,m={http_401:"APIキーが正しくありません。右上の「設定」で、入れ直してください",http_403:"このAPIキーでは使えません。右上の「設定」で、キーを確認してください",http_400:"リクエストが受け付けられませんでした。クレジットの残高が足りない可能性があります。Claude Consoleで残高を確認してください",http_413:"写真が大きすぎます。撮り直してください",http_429:"呼び出しが多すぎる、または利用の上限に達しました。少し待ってから、もう一度押してください",network:"通信できませんでした。電波かWi-Fiを確認して、もう一度押してください",invalid_json:"読み取り結果の形式が崩れました。もう一度押してください",upstream_error:"Claude側が混み合っています。少し待って、もう一度押してください"};
+function errText(e){const c=e&&e.code,m={http_401:"APIキーが正しくありません。右上の「設定」で、入れ直してください",http_403:"このAPIキーでは使えません。右上の「設定」で、キーを確認してください",http_400:"リクエストが受け付けられませんでした。クレジットの残高が足りない可能性があります。Claude Consoleで残高を確認してください",http_413:"写真が大きすぎます。撮り直してください",http_429:"呼び出しが多すぎる、または利用の上限に達しました。少し待ってから、もう一度押してください",network:"通信できませんでした。電波かWi-Fiを確認して、もう一度押してください",invalid_json:"読み取り結果の形式が崩れました。もう一度押してください(複雑な図面では、「標準」か「高精度」にすると、改善することがあります)",upstream_error:"Claude側が混み合っています。少し待って、もう一度押してください"};
  if(!m[c]&&/^http_5/.test(c||""))return m.upstream_error;if(c==="network"&&e.detail)return m.network+"(詳細: "+e.detail+")。画面(プレビュー)が外部への通信を許可していない場合は、設定の「接続テスト」を押してください";return m[c]||"読み取りに失敗しました。もう一度押すか、手入力で進めてください";}
 const API_URL="https://api.anthropic.com/v1/messages";
 async function post(ctl){
  const o={method:"POST",headers:{"x-api-key":getKey(),"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-  body:JSON.stringify({model:MODEL[S.tier],max_tokens:4000,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:S.url.split(",")[1]}},{type:"text",text:PROMPT}]}]})};
+  body:JSON.stringify({model:MODEL[S.tier],max_tokens:8000,messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:"image/jpeg",data:S.url.split(",")[1]}},{type:"text",text:PROMPT}]}]})};
  try{return await fetch(API_URL,Object.assign({},o,{signal:ctl.signal}));}
  catch(e){
   if(e&&e.name==="AbortError")throw{code:"cancelled"};
@@ -222,53 +357,55 @@ async function readOnce(){
  if(!getKey()){S.msg="先に、右上の「設定」で、APIキーを入れてください";S.showSet=true;drawSet();return false;}
  let stop;const cancelP=new Promise(r=>{stop=()=>r("cancel");}),ctl=new AbortController();
  S.abort={abort(){try{ctl.abort();}catch(e){}stop();}};
- S.busy=true;S.msg="";S.found=0;S.t0=Date.now();render();clearInterval(S.tick);S.tick=setInterval(tickDraw,500);
+ S.busy=true;S.msg="";S.t0=Date.now();render();clearInterval(S.tick);S.tick=setInterval(tickDraw,500);
  try{const t=await callApi(ctl,cancelP);
   S.reads.push(norm(parseJson(t)));S.meta.push({tier:S.tier,sec:(Date.now()-S.t0)/1000});return true;}
  catch(e){if(!(e&&e.code==="cancelled"))S.msg=errText(e);return false;}
  finally{clearInterval(S.tick);S.busy=false;S.abort=null;}}
-function tickDraw(){const p=$("#pri");if(!S.busy||!p)return;p.textContent="読み取り中 "+Math.round((Date.now()-S.t0)/1000)+"秒"+(S.found?`(穴 ${S.found}個を検出)`:"");}
+function tickDraw(){const p=$("#pri");if(!S.busy||!p)return;p.textContent="読み取り中 "+Math.round((Date.now()-S.t0)/1000)+"秒";}
 function applyReads(){const rs=S.reads.map(r=>JSON.parse(JSON.stringify(r)));
- S.runs=S.reads.map((r,i)=>`${TL[S.meta[i].tier]}・${S.meta[i].sec.toFixed(1)}秒 / ${f(r.width)}×${f(r.height)} / 板厚${f(r.thickness)} / 穴${r.holes.length}`);
- S.flags=rs.length>1?merge(rs):[];S.spec=rs[0];S.confirmed=false;clr();}
+ S.runs=S.reads.map((r,i)=>`${TL[S.meta[i].tier]}・${S.meta[i].sec.toFixed(1)}秒 / ${f(r.width)}×${f(r.height)} / 板厚${f(r.thickness)} / 穴${r.holes.length}・自由形状${new Set(r.shape.map(p=>p.s)).size}`);
+ S.flags=rs.length>1?merge(rs):[];S.spec=rs[0];S.confirmed=false;S.open={};clr();}
 async function readDrawing(){S.reads=[];S.meta=[];const ok=await readOnce();if(ok){applyReads();S.step=1;}render();}
 async function rereadDrawing(){if(S.busy||S.reads.length>=3||!S.blob)return;const ok=await readOnce();if(ok)applyReads();render();}
-function resetAll(){S.step=0;S.url="";S.blob=null;S.spec=blank();S.checked={};S.flags=[];S.runs=[];S.reads=[];S.meta=[];S.q=[];S.confirmed=false;clr();S.msg="";S.busy=false;S.showCL=false;S.showHist=false;S.showSet=false;drawSet();drawCL();render();}
+function resetAll(){S.step=0;S.url="";S.blob=null;S.spec=blank();S.checked={};S.flags=[];S.runs=[];S.reads=[];S.meta=[];S.q=[];S.confirmed=false;S.open={};clr();S.msg="";S.busy=false;S.showCL=false;S.showHist=false;S.showSet=false;drawSet();drawCL();render();}
 
-async function copyDxf(){const t=dxf();try{await navigator.clipboard.writeText(t);note("コピーしました。メモなどに貼り付けてください。");}
- catch(e){const a=document.createElement("textarea");a.value=t;document.body.appendChild(a);a.select();let k=false;try{k=document.execCommand("copy");}catch(_){}a.remove();note(k?"コピーしました。":"コピーできませんでした。「保存」を使ってください。");}}
-async function saveDxf(){const name=fname()+".dxf";
- try{const u=URL.createObjectURL(new Blob([dxf()],{type:"application/dxf"})),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000);note("「"+name+"」を保存しました。保存先は、ダウンロードの場所を確認してください。");}
- catch(e){note("保存できませんでした。「共有」か「コピー」を使ってください。");}}
-async function shareDxf(){const f=new File([dxf()],fname()+".dxf",{type:"application/dxf"});
- try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:f.name});note("共有しました。");}else note("この環境では、ファイルの共有ができません。「保存」か「コピー」を使ってください。");}
+function dl(text,name,type){const u=URL.createObjectURL(new Blob([text],{type})),a=document.createElement("a");a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),5000);}
+async function copyText(t,id,what){try{await navigator.clipboard.writeText(t);note(what+"をコピーしました。メモなどに貼り付けてください。",id);}
+ catch(e){const a=document.createElement("textarea");a.value=t;document.body.appendChild(a);a.select();let k=false;try{k=document.execCommand("copy");}catch(_){}a.remove();note(k?what+"をコピーしました。":"コピーできませんでした。「保存」を使ってください。",id);}}
+const copyDxf=()=>copyText(dxf(),"#msg","DXF"),copyMemo=()=>copyText(memo(),"#msg2","メモ");
+function saveDxf(){const name=fname()+".dxf";try{dl(dxf(),name,"application/dxf");note("「"+name+"」を保存しました。保存先は、ダウンロードの場所を確認してください。");}catch(e){note("保存できませんでした。「共有」か「コピー」を使ってください。");}}
+function saveMemo(){const name=fname()+"_メモ.txt";try{dl(memo(),name,"text/plain");note("「"+name+"」を保存しました。","#msg2");}catch(e){note("保存できませんでした。「コピー」を使ってください。","#msg2");}}
+async function shareDxf(){const fl=[new File([dxf()],fname()+".dxf",{type:"application/dxf"}),new File([memo()],fname()+"_メモ.txt",{type:"text/plain"})];
+ try{if(navigator.canShare&&navigator.canShare({files:fl})){await navigator.share({files:fl,title:fname()});note("共有しました(DXFとメモ)。");}else note("この環境では、ファイルの共有ができません。「保存」か「コピー」を使ってください。");}
  catch(e){if(!(e&&e.name==="AbortError"))note("共有できませんでした。「保存」か「コピー」を使ってください。");}}
 
-
-$("#main").addEventListener("input",e=>{const t=e.target,k=t.dataset.k;if(!k)return;
- if(t.dataset.i!==undefined)S.spec.holes[+t.dataset.i][k]=+t.value||0;
- else S.spec[k]=t.type==="number"?(+t.value||0):t.value;S.confirmed=false;const kk=t.dataset.i!==undefined?"h"+t.dataset.i:({thickness:"t",width:"w",height:"w",chamfer:"c"})[k];
- if(kk){if(S.cl[kk]||S.red[kk])S.redo[kk]=1;delete S.cl[kk];delete S.red[kk];document.querySelectorAll(`[data-key="${kk}"]`).forEach(e=>e.classList.remove("bad"));}
- const bn=$("#redbn");if(bn&&!Object.keys(S.red).length)bn.remove();
- const c=$("#cf");if(c)c.checked=false;live();});
+function touch(kk){if(kk){if(S.cl[kk]||S.red[kk])S.redo[kk]=1;delete S.cl[kk];delete S.red[kk];document.querySelectorAll(`[data-key="${kk}"]`).forEach(e=>e.classList.remove("bad"));}
+ const bn=$("#redbn");if(bn&&!Object.keys(S.red).length)bn.remove();S.confirmed=false;const c=$("#cf");if(c)c.checked=false;}
+$("#main").addEventListener("input",e=>{const t=e.target,k=t.dataset.k,g=t.dataset.g;
+ if(g){const i=+t.dataset.i;if(G[g].list)S.spec[g][i]=t.value;else S.spec[g][i][k]=k==="dir"?t.value:(+t.value||0);touch(G[g].p+i);live();return;}
+ if(!k)return;
+ S.spec[k]=t.type==="number"?(+t.value||0):t.value;touch(KM[k]);live();});
 $("#main").addEventListener("change",e=>{const t=e.target;
  if(t.id==="fc"||t.id==="fl"){if(t.files[0])loadImage(t.files[0]);}
  if(t.dataset.c!==undefined)S.checked[t.dataset.c]=t.checked;
- if(t.id==="cf"){S.confirmed=t.checked;live();}
+  if(t.id==="cf"){S.confirmed=t.checked;live();}
  if(t.id==="sk"){S.skipCL=t.checked;S.confirmed=false;render();}
  if(t.id==="fv"){S.fav.method=t.checked?S.method:undefined;fSave();}
  if(t.id==="fe"){S.fav.email=t.value.trim();fSave();render();}});
-$("#main").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const a=b.dataset.act,i=+b.dataset.i;
+$("#main").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;const a=b.dataset.act,i=+b.dataset.i,g=b.dataset.g;
  if(a==="cam")$("#fc").click();else if(a==="lib")$("#fl").click();
  else if(a==="manual"){S.step=1;render();}
- else if(a==="add"){S.spec.holes.push({x:0,y:0,diameter:0});S.confirmed=false;clr();render();}
- else if(a==="del"){S.spec.holes.splice(i,1);S.confirmed=false;clr();render();}
+ else if(a==="open"){S.open[g]=true;render();}
+ else if(a==="add"){S.spec[g].push(G[g].list?"":G[g].b());S.open[g]=true;S.confirmed=false;clr();render();}
+ else if(a==="del"){S.spec[g].splice(i,1);S.confirmed=false;clr();render();}
  else if(a==="meth"){S.method=i;render();}
  else if(a==="cl"){S.showCL=true;drawCL();}
  else if(a==="hist"){S.showHist=true;drawCL();}
  else if(a==="reread"){rereadDrawing();}
  else if(a==="tier"){S.tier=b.dataset.t;render();}
- else if(a==="copy")copyDxf();else if(a==="save")saveDxf();else if(a==="share")shareDxf();});
+ else if(a==="copy")copyDxf();else if(a==="save")saveDxf();else if(a==="share")shareDxf();
+ else if(a==="mcopy")copyMemo();else if(a==="msave")saveMemo();});
 $("#back").onclick=()=>{S.msg="";if(S.busy&&S.abort){S.abort.abort();return;}if(S.step>0){S.step--;render();}};
 $("#pri").onclick=()=>{S.msg="";
  if(S.step===0)readDrawing();
@@ -282,12 +419,23 @@ $("#cl").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)r
  else if(a==="clfix"){S.red={};clItems().forEach(x=>{if(!S.cl[x.k])S.red[x.k]=1;});S.showCL=false;drawCL();render();const e=document.querySelector("#main .bad");if(e)e.scrollIntoView({block:"center"});}
  else if(a==="hx"){S.showHist=false;drawCL();}
  else if(a==="hd"){const l=hLoad();l.splice(i,1);hStore(l);drawCL();}
- else if(a==="hl"){const x=hLoad()[i];if(x){S.spec=JSON.parse(JSON.stringify(x.spec));S.flags=[];S.runs=[];clr();S.confirmed=true;S.showHist=false;S.step=1;drawCL();render();}}});
+ else if(a==="hl"){const x=hLoad()[i];if(x){S.spec=fill(JSON.parse(JSON.stringify(x.spec)));S.flags=[];S.runs=[];S.open={};clr();S.confirmed=true;S.showHist=false;S.step=1;drawCL();render();}}});
+const KEY_LINKS={on:true,keys:"https://platform.claude.com/settings/keys",billing:"https://platform.claude.com/settings/billing",guide:"https://platform.claude.com/docs/get-api-key"};
+function lk(u,t){return KEY_LINKS.on?`<a href="${u}" target="_blank" rel="noopener noreferrer" style="color:var(--ac);font-weight:600">${t} ↗</a>`:`<span style="color:var(--ac)">${t}</span>`;}
+function keyHelp(){return`<div class="card"><h2>APIキーをお持ちでない方へ</h2>
+<p style="margin:4px 0">このアプリは、ご自身のClaude APIキーで動きます。持っていない場合は、Claude Console(platform.claude.com)で、次の順に用意してください。</p>
+<ol style="margin:6px 0">
+<li>${lk(KEY_LINKS.billing,"請求ページ")}で、クレジットを購入する(前払い)</li>
+<li>${lk(KEY_LINKS.keys,"APIキーのページ")}で、キーを作成する</li>
+<li>作ったキーを、上の欄に貼り付けて、「保存」を押す</li></ol>
+<p class="sub">・キーは、作成した直後に、一度だけ表示されます。その場で、必ずコピーしてください。<br>・料金は、使った分だけ、クレジットから引かれます。クレジットは、購入から1年で期限が切れ、返金はされません。<br>・Claudeのチャットの月額プランとは、別の契約です。<br>・残高がなくなると、読み取りが止まります。請求ページで、残高の確認と、自動チャージの設定ができます。<br>・キーが使えなくなったとき(削除、期限切れなど)は、新しいキーを作って、ここで入れ直してください。</p>
+<p class="sub">${lk(KEY_LINKS.guide,"公式の手順を見る")}</p></div>`;}
 function drawSet(){const o=$("#st");o.hidden=!S.showSet;if(!S.showSet){o.innerHTML="";return;}const k=getKey();
  o.innerHTML=`<div style="max-width:640px;margin:0 auto;padding:12px 16px 100px"><h1>設定</h1>
 <div class="card"><h2>読み取り用のAPIキー</h2><input type="password" id="kv" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="sk-ant-..." style="width:100%">
 <p class="sub">状態: ${k?"設定済み(末尾 "+esc(k.slice(-4))+")":"未設定"}</p>
 <p class="sub">キーは、この端末の、この画面の中にだけ保存されます。他の人に見せたり、メールやチャットで送ったりしないでください。</p></div>
+${keyHelp()}
 <div class="card"><h2>ご注意</h2><p class="sub">図面を読み取ると、写真がAnthropic(Claude)のサービスに送信されます。取引先の図面を使う場合は、会社の許可を得てから使ってください。</p></div>
 <div class="card"><h2>接続テスト</h2><div class="seg"><button data-act="keytest">接続テスト</button></div><p class="sub" id="kt">キーを入れて、押してください。写真は送りません。</p></div>
 ${k?'<div class="seg"><button data-act="keydel">キーを消す</button></div>':""}</div>
