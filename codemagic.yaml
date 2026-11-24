@@ -1,6 +1,6 @@
 workflows:
   sheet-master-v2:
-    name: SHEET MASTER v2.3 - TestFlight
+    name: SHEET MASTER v2.4 - TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
@@ -11,12 +11,10 @@ workflows:
         bundle_identifier: com.shu39a.amadaoffline
       xcode: latest
     scripts:
-      - name: Verify original archive and generate project
+      - name: Verify and extract original 2.4 project
         script: bash prepare.sh
-      - name: Apply distribution profile
-        script: xcode-project use-profiles --project build-input/SheetMaster/SheetMaster.xcodeproj --archive-method app-store
-      - name: Build signed IPA
-        script: xcode-project build-ipa --project build-input/SheetMaster/SheetMaster.xcodeproj --scheme SheetMaster
+      - name: Archive and export signed IPA
+        script: bash archive.sh
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
