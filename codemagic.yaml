@@ -1,6 +1,6 @@
 workflows:
   sheet-master-v2:
-    name: SHEET MASTER v2.2 - TestFlight
+    name: SHEET MASTER v2.3 - TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
