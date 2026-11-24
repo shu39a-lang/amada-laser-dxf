@@ -1,17 +1,24 @@
 workflows:
   sheet-master-v2:
-    name: SHEET MASTER v2.4.1 - TestFlight
+    name: SHEET MASTER v2.4.2 - TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
       app_store_connect: codemagic7
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: sheet-master-v2-4-2
+          include: true
+          source: true
     environment:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.shu39a.amadaoffline
       xcode: latest
     scripts:
-      - name: Verify and extract original 2.4.1 project
+      - name: Verify and extract original 2.4.2 project
         script: bash prepare.sh
       - name: Archive and export signed IPA
         script: bash archive.sh

@@ -1,4 +1,4 @@
-name: SHEET MASTER v2.4.1 build
+name: SHEET MASTER v2.4.2 build
 on: [push, pull_request, workflow_dispatch]
 jobs:
   build:
@@ -10,5 +10,5 @@ jobs:
         run: |
           xcodebuild -project build-input/SheetMaster/SheetMaster.xcodeproj -scheme SheetMaster -configuration Release -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/SheetMasterBuild" SM_BUNDLE_ID=com.shu39a.amadaoffline CODE_SIGNING_ALLOWED=NO build
           plist="$RUNNER_TEMP/SheetMasterBuild/Build/Products/Release-iphoneos/SheetMaster.app/Info.plist"
-          test "$(plutil -extract CFBundleShortVersionString raw "$plist")" = "2.4.1"
+          test "$(plutil -extract CFBundleShortVersionString raw "$plist")" = "2.4.2"
           test "$(plutil -extract CFBundleIdentifier raw "$plist")" = "com.shu39a.amadaoffline"
