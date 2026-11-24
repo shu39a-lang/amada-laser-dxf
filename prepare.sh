@@ -1,6 +1,6 @@
 set -euo pipefail
-printf '%s  %s\n' c827b9b219ed793dd146f2297bfc006752c54bd5ac6810954af6d29c4204cefc SheetMaster_v2.zip | shasum -a 256 -c -
-unzip -q SheetMaster_v2.zip -d build-input
+printf '%s  %s\n' 35c715d5eff8b21ba920facf9954defdd402e93e777e1a38d0bb4e01296ee1be SheetMaster_v2.1.zip | shasum -a 256 -c -
+unzip -q SheetMaster_v2.1.zip -d build-input
 cd build-input/SheetMaster
 export SHEET_BUILD_NUMBER="${PROJECT_BUILD_NUMBER:-1}"
 python3 - <<'PY'
