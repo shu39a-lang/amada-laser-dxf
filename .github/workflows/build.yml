@@ -1,0 +1,9 @@
+name: SHEET MASTER v2 build
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash prepare.sh
+      - run: xcodebuild -project build-input/SheetMaster/SheetMaster.xcodeproj -scheme SheetMaster -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build

@@ -1,56 +1,22 @@
 workflows:
-  sheet-master-html-preserved:
-    name: SHEET MASTER HTML Preserved - TestFlight
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-    max_build_duration: 60
+  sheet-master-v2:
+    name: SHEET MASTER v2 - TestFlight
     instance_type: mac_mini_m2
+    max_build_duration: 60
     integrations:
       app_store_connect: codemagic7
     environment:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.shu39a.amadaoffline
-      vars:
-        XCODE_PROJECT: SHEET_MASTER_iOS/SHEETMASTER.xcodeproj
-        XCODE_SCHEME: SHEETMASTER
       xcode: latest
     scripts:
-      - name: Verify original HTML and Xcode project
-        script: |
-          set -euo pipefail
-          cd "$CM_BUILD_DIR"
-          printf '%s  %s\n' '5c738e90d9f8f1e173c9c09d1d5e22e8a5d7c31184aa233e2c43c108724616a6' 'SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html' | shasum -a 256 -c -
-          plutil -lint "$XCODE_PROJECT/project.pbxproj" "SHEET_MASTER_iOS/SHEETMASTER/Info.plist"
-          xcodebuild -list -project "$XCODE_PROJECT"
-      - name: Set unique TestFlight build number
-        script: |
-          set -euo pipefail
-          cd "$CM_BUILD_DIR"
-          LATEST=$(app-store-connect get-latest-build-number 6837735676 --version-string 1.0.0)
-          [[ "$LATEST" =~ ^[0-9]+$ ]] || { echo "Cannot verify latest Apple build number"; exit 1; }
-          NEXT=$((LATEST + 1))
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEXT" SHEET_MASTER_iOS/SHEETMASTER/Info.plist
-          echo "TestFlight build number: $NEXT"
-      - name: Restore original app icon to Xcode asset catalog
-        script: |
-          set -e
-          cp "$CM_BUILD_DIR/AppIcon.png" "$CM_BUILD_DIR/SHEET_MASTER_iOS/SHEETMASTER/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
-          test -s "$CM_BUILD_DIR/SHEET_MASTER_iOS/SHEETMASTER/Resources/SHEET MASTER.html"
-      - name: Compile iOS wrapper without signing
-        script: |
-          set -euo pipefail
-          xcodebuild -project "$CM_BUILD_DIR/$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
-      - name: Set up signing
-        script: |
-          xcode-project use-profiles --project "$CM_BUILD_DIR/$XCODE_PROJECT" --archive-method app-store
-      - name: Build IPA
-        script: |
-          xcode-project build-ipa --project "$CM_BUILD_DIR/$XCODE_PROJECT" --scheme "$XCODE_SCHEME"
+      - name: Verify original archive and generate project
+        script: bash prepare.sh
+      - name: Apply distribution profile
+        script: xcode-project use-profiles --project build-input/SheetMaster/SheetMaster.xcodeproj --archive-method app-store
+      - name: Build signed IPA
+        script: xcode-project build-ipa --project build-input/SheetMaster/SheetMaster.xcodeproj --scheme SheetMaster
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
