@@ -29,4 +29,5 @@ xcodebuild -project build-input/SheetMaster/SheetMaster.xcodeproj -scheme SheetM
 archived_app="$build_root/SheetMaster.xcarchive/Products/Applications/SheetMaster.app/Info.plist"
 test "$(plutil -extract CFBundleShortVersionString raw "$archived_app")" = "2.5"
 test "$(plutil -extract CFBundleIdentifier raw "$archived_app")" = "$bundle_id"
+test "$(plutil -extract CFBundleVersion raw "$archived_app")" = "$PROJECT_BUILD_NUMBER"
 xcodebuild -exportArchive -archivePath "$build_root/SheetMaster.xcarchive" -exportOptionsPlist "$build_root/ExportOptions.plist" -exportPath "$build_root/ios/ipa"
