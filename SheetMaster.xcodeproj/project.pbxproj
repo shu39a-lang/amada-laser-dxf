@@ -1,0 +1,377 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A23EF8EC264A5CD7A68ACD0C /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6BDB2BBD4176851234FD54B /* AppStore.swift */; };
+		FE03C5BF44A9AA7B9B435E8D /* SheetMasterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3AAB0B94A2A7AD1A9396DA /* SheetMasterApp.swift */; };
+		C595075D056AC46739CC8645 /* DXFWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED56DEEAE8747684026B4F2 /* DXFWriter.swift */; };
+		385374BA08ADE5A9EC296C31 /* Geometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DC5CCBCE1D3D66270B32F4 /* Geometry.swift */; };
+		F5B17817F20AAB45D35801D4 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D30A05CDEB6DFB3A6A587C5 /* Models.swift */; };
+		F299587AD2D4B1566CB984E8 /* ClaudeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F000ADD32B54C504137CE71 /* ClaudeClient.swift */; };
+		8AF6FED263EF975BA3371A06 /* DrawingReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 567A1BDDF039E8490A7956A4 /* DrawingReader.swift */; };
+		CCC9F85142970141A9170750 /* ImagePreprocessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A4BFE2511D285F2C7208C10 /* ImagePreprocessor.swift */; };
+		4E9A468D82BD12DE989DC8D8 /* Prompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B36119E8048E30AC65B02E9 /* Prompts.swift */; };
+		429F189100BA415ED6AAB597 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1EA77443FFC544FABFEEE49 /* Keychain.swift */; };
+		E41D1FCDCF1C91231E9B5397 /* EditViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8175B279DAA83A72D3979FD /* EditViews.swift */; };
+		EADCF42BAF6DEAE26F43EA2B /* ExportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3E3B3C42F73DC7AD91A94B8 /* ExportView.swift */; };
+		4A3C9C317EB5694464F3BBD6 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A1C376534458A8FEF1C90F /* HomeView.swift */; };
+		9C307FA14E813BD3FE60D550 /* PreviewViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0138CA2BCD95867ACC95880 /* PreviewViews.swift */; };
+		0219BA76DE463BF4EC6D22B3 /* ResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374AAE2621A54A5AF25BCF19 /* ResultView.swift */; };
+		1E1E98D4F21C91D955E191DD /* SettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DF00811DAD3073C7EC8C1E /* SettingsViews.swift */; };
+		6EEEE39B1AB4355FA617C29C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 926215B008EBBA578C8620F6 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		F6BDB2BBD4176851234FD54B /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		7A3AAB0B94A2A7AD1A9396DA /* SheetMasterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetMasterApp.swift; sourceTree = "<group>"; };
+		AED56DEEAE8747684026B4F2 /* DXFWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DXFWriter.swift; sourceTree = "<group>"; };
+		A5DC5CCBCE1D3D66270B32F4 /* Geometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Geometry.swift; sourceTree = "<group>"; };
+		2D30A05CDEB6DFB3A6A587C5 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		1F000ADD32B54C504137CE71 /* ClaudeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeClient.swift; sourceTree = "<group>"; };
+		567A1BDDF039E8490A7956A4 /* DrawingReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingReader.swift; sourceTree = "<group>"; };
+		2A4BFE2511D285F2C7208C10 /* ImagePreprocessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreprocessor.swift; sourceTree = "<group>"; };
+		8B36119E8048E30AC65B02E9 /* Prompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Prompts.swift; sourceTree = "<group>"; };
+		C1EA77443FFC544FABFEEE49 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+		A8175B279DAA83A72D3979FD /* EditViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditViews.swift; sourceTree = "<group>"; };
+		B3E3B3C42F73DC7AD91A94B8 /* ExportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportView.swift; sourceTree = "<group>"; };
+		39A1C376534458A8FEF1C90F /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		F0138CA2BCD95867ACC95880 /* PreviewViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewViews.swift; sourceTree = "<group>"; };
+		374AAE2621A54A5AF25BCF19 /* ResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultView.swift; sourceTree = "<group>"; };
+		D2DF00811DAD3073C7EC8C1E /* SettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViews.swift; sourceTree = "<group>"; };
+		926215B008EBBA578C8620F6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		16A2199B7E72237C3C0B49E7 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		8B4DC3F4470964BD6CCFAEE2 /* SheetMaster.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SheetMaster.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DAF6AA633395B1B76148E35B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1629A0BB4117BEFC577EF28D /* root */ = {
+			isa = PBXGroup;
+			children = (
+				B12EE72417474422532EC679,
+				16A2199B7E72237C3C0B49E7,
+				9B33FED2BE3086184B25A8F8,
+			);
+			sourceTree = "<group>";
+		};
+		9B33FED2BE3086184B25A8F8 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8B4DC3F4470964BD6CCFAEE2,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		B12EE72417474422532EC679 /* SheetMaster */ = {
+			isa = PBXGroup;
+			children = (
+				90250AFFEF6D4477DA3F9C25,
+				A8CB5705A738463468644E60,
+				51B937194F02CC1435EF7180,
+				306B4AB95FF9C6A839F2889A,
+				C13ED7EDCB1AEE0E8D470858,
+				2FD81C8F88E3BCE2D8E187D9,
+				9CB6E6C20D5D2DF1865C29CA,
+				926215B008EBBA578C8620F6,
+			);
+			path = SheetMaster; sourceTree = "<group>";
+		};
+		90250AFFEF6D4477DA3F9C25 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				F6BDB2BBD4176851234FD54B,
+				7A3AAB0B94A2A7AD1A9396DA,
+			);
+			path = App; sourceTree = "<group>";
+		};
+		A8CB5705A738463468644E60 /* Export */ = {
+			isa = PBXGroup;
+			children = (
+				AED56DEEAE8747684026B4F2,
+			);
+			path = Export; sourceTree = "<group>";
+		};
+		51B937194F02CC1435EF7180 /* Geometry */ = {
+			isa = PBXGroup;
+			children = (
+				A5DC5CCBCE1D3D66270B32F4,
+			);
+			path = Geometry; sourceTree = "<group>";
+		};
+		306B4AB95FF9C6A839F2889A /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				2D30A05CDEB6DFB3A6A587C5,
+			);
+			path = Models; sourceTree = "<group>";
+		};
+		C13ED7EDCB1AEE0E8D470858 /* Reading */ = {
+			isa = PBXGroup;
+			children = (
+				1F000ADD32B54C504137CE71,
+				567A1BDDF039E8490A7956A4,
+				2A4BFE2511D285F2C7208C10,
+				8B36119E8048E30AC65B02E9,
+			);
+			path = Reading; sourceTree = "<group>";
+		};
+		2FD81C8F88E3BCE2D8E187D9 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				C1EA77443FFC544FABFEEE49,
+			);
+			path = Support; sourceTree = "<group>";
+		};
+		9CB6E6C20D5D2DF1865C29CA /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A8175B279DAA83A72D3979FD,
+				B3E3B3C42F73DC7AD91A94B8,
+				39A1C376534458A8FEF1C90F,
+				F0138CA2BCD95867ACC95880,
+				374AAE2621A54A5AF25BCF19,
+				D2DF00811DAD3073C7EC8C1E,
+			);
+			path = Views; sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		42AEFBAE01D2DFD981F7DA7D /* SheetMaster */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8EA4497A250DAA79A5DFA797 /* Build configuration list for PBXNativeTarget "SheetMaster" */;
+			buildPhases = (
+				0F78FE532035D122ED352DBA /* Sources */,
+				DAF6AA633395B1B76148E35B /* Frameworks */,
+				943E4BBD9B51C81965501BA3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SheetMaster;
+			productName = SheetMaster;
+			productReference = 8B4DC3F4470964BD6CCFAEE2 /* SheetMaster.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		46F86FAA6BBF9AC94A7E4595 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					42AEFBAE01D2DFD981F7DA7D = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 2929D8BC0CA11EC77EAF5AA0 /* Build configuration list for PBXProject "SheetMaster" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = ja;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				ja,
+				Base,
+			);
+			mainGroup = 1629A0BB4117BEFC577EF28D;
+			productRefGroup = 9B33FED2BE3086184B25A8F8 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				42AEFBAE01D2DFD981F7DA7D /* SheetMaster */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		943E4BBD9B51C81965501BA3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6EEEE39B1AB4355FA617C29C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0F78FE532035D122ED352DBA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A23EF8EC264A5CD7A68ACD0C /* AppStore.swift in Sources */,
+				FE03C5BF44A9AA7B9B435E8D /* SheetMasterApp.swift in Sources */,
+				C595075D056AC46739CC8645 /* DXFWriter.swift in Sources */,
+				385374BA08ADE5A9EC296C31 /* Geometry.swift in Sources */,
+				F5B17817F20AAB45D35801D4 /* Models.swift in Sources */,
+				F299587AD2D4B1566CB984E8 /* ClaudeClient.swift in Sources */,
+				8AF6FED263EF975BA3371A06 /* DrawingReader.swift in Sources */,
+				CCC9F85142970141A9170750 /* ImagePreprocessor.swift in Sources */,
+				4E9A468D82BD12DE989DC8D8 /* Prompts.swift in Sources */,
+				429F189100BA415ED6AAB597 /* Keychain.swift in Sources */,
+				E41D1FCDCF1C91231E9B5397 /* EditViews.swift in Sources */,
+				EADCF42BAF6DEAE26F43EA2B /* ExportView.swift in Sources */,
+				4A3C9C317EB5694464F3BBD6 /* HomeView.swift in Sources */,
+				9C307FA14E813BD3FE60D550 /* PreviewViews.swift in Sources */,
+				0219BA76DE463BF4EC6D22B3 /* ResultView.swift in Sources */,
+				1E1E98D4F21C91D955E191DD /* SettingsViews.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A29E99B3621E192E17928B0B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+			};
+			name = Debug;
+		};
+		2D94E7EAB1CAABEC907C8222 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+			};
+			name = Release;
+		};
+		084559921FC05411F9DBE987 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 16A2199B7E72237C3C0B49E7 /* Config.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(SM_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = "$(SM_TEAM_ID)";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "SHEET MASTER";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "図面を撮影して読み取るためにカメラを使います";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "図面の写真を読み込むために使います";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.6;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SM_BUNDLE_ID)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		9E1531FB5A68C1039B84A6EA /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 16A2199B7E72237C3C0B49E7 /* Config.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = "$(SM_BUILD_NUMBER)";
+				DEVELOPMENT_TEAM = "$(SM_TEAM_ID)";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "SHEET MASTER";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "図面を撮影して読み取るためにカメラを使います";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "図面の写真を読み込むために使います";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.6;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SM_BUNDLE_ID)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2929D8BC0CA11EC77EAF5AA0 /* Build configuration list for PBXProject "SheetMaster" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A29E99B3621E192E17928B0B /* Debug */,
+				2D94E7EAB1CAABEC907C8222 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8EA4497A250DAA79A5DFA797 /* Build configuration list for PBXNativeTarget "SheetMaster" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				084559921FC05411F9DBE987 /* Debug */,
+				9E1531FB5A68C1039B84A6EA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+}

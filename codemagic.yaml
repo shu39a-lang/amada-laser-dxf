@@ -1,6 +1,6 @@
 workflows:
   sheet-master-v2:
-    name: SHEET MASTER v2.5 - TestFlight
+    name: SHEET MASTER v2.6 - TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
@@ -9,7 +9,7 @@ workflows:
       events:
         - push
       branch_patterns:
-        - pattern: sheet-master-v2-5
+        - pattern: sheet-master-v2-6
           include: true
           source: true
     environment:
@@ -18,8 +18,6 @@ workflows:
         bundle_identifier: com.shu39a.amadaoffline
       xcode: latest
     scripts:
-      - name: Verify and extract original 2.5 project
-        script: bash prepare.sh
       - name: Archive and export signed IPA
         script: bash archive.sh
     artifacts:
@@ -29,3 +27,4 @@ workflows:
         auth: integration
         submit_to_testflight: true
         submit_to_app_store: false
+

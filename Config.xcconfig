@@ -1,0 +1,10 @@
+// ===== ここだけ書き換えてください =====
+// 今 TestFlight に出ている SHEET MASTER の Bundle ID(App Store Connect の「App情報」に表示)
+SM_BUNDLE_ID = com.shu39a.amadaoffline
+
+// Apple Developer の Team ID(10桁の英数字)
+SM_TEAM_ID = $(SHEET_MASTER_SIGNING_TEAM)
+
+// ビルド番号(前回アップロードより大きい数字)
+SM_BUILD_NUMBER = $(SHEET_MASTER_BUILD_NUMBER)
+// =====================================
