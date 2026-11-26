@@ -34,6 +34,39 @@ struct DrawingReader {
         apply(inventory: inv, to: &rec)
         rec.rawInventory = J.pretty(inv)
 
+        // v2.8: 板の部品が0件なら、理由を添えて1回だけ洗い出しをやり直す
+        if !rec.parts.contains(where: { $0.process == .laser }) {
+            await progress("板の部品が見つからなかったので、もう一度洗い出し中…")
+            let found = rec.parts.map { "\($0.name)(\($0.process.rawValue))" }.joined(separator: "、")
+            let note = """
+            前回の回答では、レーザーで抜く板の部品が0件でした(返ってきた部品: \(found.isEmpty ? "なし" : found))。
+            表題欄の品名の部品(カバー・ブラケット・板など)は、溶接ナット・溶接・焼け取り・みがきの指示があっても板金部品なので、必ず parts に process="laser" で入れてください。
+            溶接ナット・ボルトなどは process="purchased" で別の行にします。parts は配列で返してください(文字列にしない)。
+            """
+            if let inv2 = try? await inventory(prepared, retryNote: note, onProgress: { _ in }) {
+                var rec2 = base
+                apply(inventory: inv2, to: &rec2)
+                if rec2.parts.contains(where: { $0.process == .laser }) {
+                    rec = rec2
+                    rec.rawInventory = J.pretty(inv2)
+                }
+            }
+        }
+
+        // それでも0件なら、表題欄の品名で板を1つ作って展開を読みに行く(1枚もの図面が大半のため)
+        if !rec.parts.contains(where: { $0.process == .laser }) {
+            var p = Part()
+            p.partKey = "P\(rec.parts.count + 1)"
+            p.name = rec.title.isEmpty ? "部品1(自動追加)" : rec.title + "(自動追加)"
+            p.material = J.str(inv["default_material"])
+            p.process = .laser
+            p.include = true
+            p.quantity = 1
+            p.thicknessSource = "unknown"
+            rec.parts.insert(p, at: 0)
+            rec.questions.insert("板の部品を自動で見つけられなかったため、品名の板を1つ追加して読みました。材質・板厚・数量を確認してください", at: 0)
+        }
+
         // 段階B(レーザー部品だけ、並列)
         let targets = rec.parts.filter { $0.process == .laser }
         await progress("展開形状を読み取り中(0/\(targets.count))…")
@@ -87,9 +120,12 @@ struct DrawingReader {
 
     // MARK: - 段階A
 
-    private func inventory(_ images: [PreparedImage], onProgress: @escaping (Int) -> Void) async throws -> [String: Any] {
+    private func inventory(_ images: [PreparedImage], retryNote: String? = nil,
+                           onProgress: @escaping (Int) -> Void) async throws -> [String: Any] {
         var content = ClaudeClient.imageBlocks(images, cacheLast: false)
-        content.append(["type": "text", "text": "この図面のレーザー加工対象の板部品をすべて洗い出してください。"])
+        var text = "この図面のレーザー加工対象の板部品をすべて洗い出してください。"
+        if let n = retryNote { text += "\n\n【読み直しの理由】\n" + n }
+        content.append(["type": "text", "text": text])
         do {
             return try await client.callTool(system: Prompts.inventorySystem, content: content,
                                              toolName: "report_inventory",
@@ -126,7 +162,7 @@ struct DrawingReader {
             part.thicknessEvidence = J.str(p["thickness_evidence"])
             part.process = PartProcess(rawValue: J.str(p["process"])) ?? .laser
             part.quantity = max(1, Int(J.num(p["quantity"]) ?? 1))
-            part.mirrorPair = (p["mirror_pair"] as? Bool) ?? false
+            part.mirrorPair = (p["mirror_pair"] as? Bool) ?? (J.str(p["mirror_pair"]).lowercased() == "true")
             part.bendsCount = Int(J.num(p["bends_count"]) ?? 0)
             part.viewsDescription = J.str(p["views"])
             part.confidence = J.num(p["confidence"]) ?? 0
@@ -242,7 +278,7 @@ struct DrawingReader {
         case "outer_dims": f.developedBy = .outerDims
         default: f.developedBy = .flat
         }
-        if let fo = o["faces"] as? [String: Any] {
+        if let fo = J.obj(o["faces"]) {
             f.faces = parseFaces(fo)
             if f.developedBy != .faces, f.faces != nil, J.arr(o["outline"]).count < 3 { f.developedBy = .faces }
         }
@@ -253,7 +289,7 @@ struct DrawingReader {
             ov.cornerType = CornerType(rawValue: J.str(v["corner_type"])) ?? .none
             ov.cornerSize = J.num(v["corner_size"]) ?? 0
             if ov.cornerSize <= 0 { ov.cornerType = .none }
-            if let a = v["arc_to_next"] as? [String: Any], let cx = J.num(a["cx"]), let cy = J.num(a["cy"]) {
+            if let a = J.obj(v["arc_to_next"]), let cx = J.num(a["cx"]), let cy = J.num(a["cy"]) {
                 ov.arcToNext = ArcSpec(cx: cx, cy: cy, clockwise: (a["clockwise"] as? Bool) ?? false)
             }
             return ov
@@ -271,7 +307,7 @@ struct DrawingReader {
             hole.width = J.num(h["width"]) ?? 0
             hole.w = J.num(h["w"]) ?? 0; hole.h = J.num(h["h"]) ?? 0
             hole.angle = J.num(h["angle"]) ?? 0; hole.cornerR = J.num(h["corner_r"]) ?? 0
-            hole.points = (h["points"] as? [Any] ?? []).compactMap { (p) -> P2? in
+            hole.points = J.list(h["points"]).compactMap { (p) -> P2? in
                 guard let a = p as? [Any], a.count >= 2, let x = J.num(a[0]), let y = J.num(a[1]) else { return nil }
                 return P2(x: x, y: y)
             }
@@ -386,8 +422,25 @@ enum J {
         if let n = a as? NSNumber { return n.stringValue }
         return ""
     }
-    static func strs(_ a: Any?) -> [String] { (a as? [Any] ?? []).map { str($0) }.filter { !$0.isEmpty } }
-    static func arr(_ a: Any?) -> [[String: Any]] { a as? [[String: Any]] ?? [] }
+    /// v2.8: AIが配列・オブジェクトを「JSONの文字列」で返すことがあるので、文字列なら中身を解析して使う
+    ///  (v2.7までは部品一覧が文字列で返ると0件扱いになり「板の部品が見つかりませんでした」になっていた)
+    static func decoded(_ a: Any?) -> Any? {
+        guard let s = a as? String else { return a }
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let f = t.first, f == "[" || f == "{", let d = t.data(using: .utf8),
+              let v = try? JSONSerialization.jsonObject(with: d) else { return a }
+        return v
+    }
+    static func strs(_ a: Any?) -> [String] { (decoded(a) as? [Any] ?? []).map { str($0) }.filter { !$0.isEmpty } }
+    static func arr(_ a: Any?) -> [[String: Any]] {
+        let v = decoded(a)
+        if let x = v as? [[String: Any]] { return x }
+        if let x = v as? [Any] { return x.compactMap { decoded($0) as? [String: Any] } }
+        if let x = v as? [String: Any] { return [x] }      // 1件だけオブジェクトで返った場合
+        return []
+    }
+    static func obj(_ a: Any?) -> [String: Any]? { decoded(a) as? [String: Any] }
+    static func list(_ a: Any?) -> [Any] { decoded(a) as? [Any] ?? [] }
     static func num(_ a: Any?) -> Double? {
         if let n = a as? NSNumber {
             if CFGetTypeID(n) == CFBooleanGetTypeID() { return nil }

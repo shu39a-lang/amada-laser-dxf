@@ -277,7 +277,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "2.7"
+    static let version = "2.8"
 }
 
 enum Fmt {
