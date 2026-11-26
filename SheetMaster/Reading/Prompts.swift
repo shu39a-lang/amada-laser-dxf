@@ -29,6 +29,13 @@ enum Prompts {
 - 部品表が無い1枚ものの図面(表題欄に品名・材質・数量だけ)は、その品名の板を1部品として必ず parts に入れる(process="laser")。parts が0件になる回答はしない
 - 「φ7後M6ナット全周溶接」などの溶接ナットは、板の穴(φ7)として板の部品に含め、ナット自体は process="purchased" の別の行にする
 - parts は必ず配列で返す(JSONの文字列にしない)
+- 【部品表に無い板(妻板など)】正面図・側面図で、外形線に囲まれた面(台形・五角形・四角形など)が板として描かれていて、部品表のどの部品の展開にも当たらない場合は、部品表に無くても別の部品として parts に入れる。
+  例: 樋(とい)・トレー・ホッパー・カバーの両端をふさぐ妻板(本体の断面と同じ形の板)。正面図で本体の断面の上に横線が端から端まで通っていれば、その線と斜面・底で囲まれた面は妻板。
+  ・name に「(妻板・部品表に無し)」のように付け、not_in_parts_list=true にする
+  ・材質・板厚は本体と同じと推定する(thickness_source="inferred"、根拠を thickness_evidence に)
+  ・quantity は付く端の数(両端なら2)。分からなければ2とし、questions に「妻板の枚数」を書く
+  ・手前・奥のどちらに付くか、内側にはめるか端面に当てるかで寸法が変わる場合は、questions に書く
+  ・部品が増えても構わない。迷ったら別部品として出す(作業者があとで外せる)
 - 部品表に材質・板厚の行が複数あるときは、蛍光ペン・丸印・手書き(「塗装N9.5」など)で指定された行を採用する
 
 【板厚の決め方】
@@ -66,6 +73,7 @@ report_inventory ツールで返す。最初に analysis に、どのビュー�
      "mirror_pair": {"type": "boolean", "description": "勝手違い(左右反転品)も作る場合 true"},
      "bends_count": {"type": "integer"},
      "views": {"type": "string", "description": "この部品が描かれているビューと位置"},
+     "not_in_parts_list": {"type": "boolean", "description": "部品表に無い板(妻板など)を図から見つけて追加した場合 true"},
      "confidence": {"type": "number"}
     },
     "required": ["id", "name", "material", "thickness_mm", "thickness_source", "process", "quantity", "mirror_pair", "bends_count", "views", "confidence"]
@@ -165,6 +173,16 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
 - faces の holes も同じく photo を付ける。どの写真にも描かれていない穴だけ photo を省く。
 - 位置はできるだけ正確に(数ピクセル以内)。アプリは複数の穴の位置から写真の縮尺・傾きを計算するので、2つ以上の穴に付けること。
 
+【部品表に無い板・作業者が追加した板(妻板など)】
+- 寸法が書かれていないことが多い。本体の断面(外寸・角度・底の幅・高さ)から計算して形を作る。例: 底200、斜面16°、上の幅680、高さ69の樋の妻板 → 台形 (240,0)(440,0)(680,69)(0,69)。
+- 内側にはめるか端面に当てるかが図から分からないときは、外寸(端面に当てる)で作り、変わる頂点の check に「内側にはめる場合は板厚分小さくなる」などと書く。
+- 水抜きのすき間・切欠きが注記にあれば形に入れ、位置・大きさが推定なら check に書く。
+- 曲げの無い平板なら developed_by="flat"。
+
+【推定した所の印(check)】
+- 図面に寸法が無く計算・推定で決めた頂点・穴には、その頂点・穴の check に理由を短く書く(例: 「寸法なし。断面から計算」「奥に付くなら幅が変わる」)。アプリはその所をオレンジ色で表示し、作業者が直す。
+- 図面の寸法どおりの所には check を付けない(付けすぎると目印の意味がなくなる)。
+
 【全体寸法の注意】
 - key_dimensions の全体横・縦は、円弧のふくらみ(端のR)まで含めた外寸にする。例: 円弧の中心どうし200、両端R50 → 縦 = 50 + 200 + 50 = 300。
 - 寸法が円弧の中心・穴の中心から測られているときは、その基準点の座標を先に決めてから他の点を置く。
@@ -210,6 +228,7 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
       "a2": {"type": "number"}, "d2": {"type": "number"}, "width": {"type": "number"},
       "w": {"type": "number"}, "h": {"type": "number"}, "corner_r": {"type": "number"},
       "note": {"type": "string"},
+      "check": {"type": "string"},
       "photo": {"type": "object", "description": "写真の全体画像の中での穴の位置(ピクセル)", "properties": {
         "no": {"type": "integer"}, "px": {"type": "number"}, "py": {"type": "number"}}, "required": ["no", "px", "py"]}
      }, "required": ["face", "type", "a", "d"]}},
@@ -230,6 +249,7 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
      "x": {"type": "number"}, "y": {"type": "number"},
      "corner_type": {"type": "string", "enum": ["none", "chamfer", "radius"]},
      "corner_size": {"type": "number"},
+     "check": {"type": "string", "description": "推定した頂点だけ。理由(アプリがオレンジで表示)"},
      "arc_to_next": {
       "type": ["object", "null"],
       "properties": {"cx": {"type": "number"}, "cy": {"type": "number"}, "clockwise": {"type": "boolean"}},
@@ -250,6 +270,7 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
      "w": {"type": "number"}, "h": {"type": "number"}, "angle": {"type": "number"}, "corner_r": {"type": "number"},
      "points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}},
      "note": {"type": "string"},
+     "check": {"type": "string", "description": "推定した穴だけ。理由"},
      "photo": {"type": "object", "description": "写真の全体画像の中での穴の位置(ピクセル)", "properties": {
        "no": {"type": "integer"}, "px": {"type": "number"}, "py": {"type": "number"}}, "required": ["no", "px", "py"]}
     },

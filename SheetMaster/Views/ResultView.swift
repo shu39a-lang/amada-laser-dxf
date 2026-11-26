@@ -12,6 +12,7 @@ struct ResultView: View {
     @State private var rereading: PartRef?
     @State private var zooming: PartRef?
     @State private var comparing: PartRef?
+    @State private var addingPart = false
     @State private var showExport = false
     @State private var showOriginal = false
 
@@ -53,6 +54,18 @@ struct ResultView: View {
                                  onZoom: { zooming = PartRef(id: pair.element.id) },
                                  onCompare: { comparing = PartRef(id: pair.element.id) })
                     }
+
+                    // v3.0: 部品表に無い板(妻板など)を作業者が足す
+                    Button {
+                        addingPart = true
+                    } label: {
+                        Label("板を追加して読む", systemImage: "plus.rectangle.on.rectangle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    Text("図面に描かれているのに出てこない板(両端の妻板など)があれば、ここから「①の下の台形も板」のように一言書いて追加できます。")
+                        .font(.caption).foregroundStyle(.secondary)
 
                     if !others.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -113,6 +126,9 @@ struct ResultView: View {
                     FullPreviewView(title: p.name, built: Geometry.build(part: p, settings: store.settings),
                                     loadImages: { d.imageFiles.compactMap { store.loadImage($0) } })
                 }
+            }
+            .sheet(isPresented: $addingPart) {
+                AddPartSheet(drawingID: drawingID)
             }
             .sheet(item: $comparing) { ref in
                 if let p = d.parts.first(where: { $0.id == ref.id }) {
@@ -175,13 +191,20 @@ struct PartCard: View {
                 Text(part.name).font(.headline).lineLimit(2)
                 Spacer()
             }
+            if let by = part.addedBy {
+                Text(by == "user" ? "部品表に無い板(追加した板)" : "部品表に無い板(AIが図から見つけて追加)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange))
+            }
 
             if !built.outline.isEmpty {
                 PartPreview(built: built)
                     .frame(height: 230)
                     .onTapGesture(perform: onZoom)
                 HStack {
-                    PreviewLegend()
+                    PreviewLegend(showCheck: !built.checkMarks.isEmpty)
                     Spacer()
                     Button(action: onZoom) { Label("拡大", systemImage: "arrow.up.left.and.arrow.down.right") }
                         .font(.caption)
@@ -237,6 +260,18 @@ struct PartCard: View {
                 }
             }
             .font(.subheadline)
+
+            // v3.0: 推定した所(図のオレンジの丸・穴)
+            if !built.checkMarks.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("要確認(図のオレンジの所は推定です。違っていれば「数値を直す」で直してください)")
+                        .font(.caption.bold()).foregroundStyle(.orange)
+                    ForEach(built.checkMarks.map(\.note).uniqued(), id: \.self) { Text("・" + $0).font(.caption) }
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.orange, lineWidth: 1))
+            }
 
             let checks = built.blocking + built.warnings
             if !checks.isEmpty && !built.outline.isEmpty {

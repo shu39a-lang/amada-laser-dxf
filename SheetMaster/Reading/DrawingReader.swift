@@ -167,6 +167,9 @@ struct DrawingReader {
             part.viewsDescription = J.str(p["views"])
             part.confidence = J.num(p["confidence"]) ?? 0
             part.include = part.process == .laser
+            if (p["not_in_parts_list"] as? Bool) == true || J.str(p["not_in_parts_list"]).lowercased() == "true" {
+                part.addedBy = "ai"
+            }
             return part
         }
     }
@@ -237,6 +240,9 @@ struct DrawingReader {
         同じ図面の他の部品(これらは出さない): \(others.isEmpty ? "なし" : others)
         この部品1つだけの展開形状を出してください。
         """
+        if part.addedBy != nil {
+            text += "\n\n【この部品について】部品表に無い板です(\(part.addedBy == "user" ? "作業者が追加" : "図から見つけて追加")。寸法が書かれていなければ本体の断面などから計算し、推定した頂点・穴には check に理由を書いてください。"
+        }
         if !part.userHint.isEmpty {
             text += "\n\n【作業者からの指示(最優先)】\n\(part.userHint)"
         }
@@ -293,6 +299,7 @@ struct DrawingReader {
             var ov = OutlineVertex(x: x, y: y)
             ov.cornerType = CornerType(rawValue: J.str(v["corner_type"])) ?? .none
             ov.cornerSize = J.num(v["corner_size"]) ?? 0
+            ov.check = J.str(v["check"]).isEmpty ? nil : J.str(v["check"])
             if ov.cornerSize <= 0 { ov.cornerType = .none }
             if let a = J.obj(v["arc_to_next"]), let cx = J.num(a["cx"]), let cy = J.num(a["cy"]) {
                 ov.arcToNext = ArcSpec(cx: cx, cy: cy, clockwise: (a["clockwise"] as? Bool) ?? false)
@@ -317,6 +324,7 @@ struct DrawingReader {
                 return P2(x: x, y: y)
             }
             hole.note = J.str(h["note"])
+            hole.check = J.str(h["check"]).isEmpty ? nil : J.str(h["check"])
             parsePhoto(h, into: &hole)
             return hole
         }
@@ -427,6 +435,7 @@ extension DrawingReader {
             hole.h = J.num(x["h"]) ?? 0
             hole.cornerR = J.num(x["corner_r"]) ?? 0
             hole.note = J.str(x["note"])
+            hole.check = J.str(x["check"]).isEmpty ? nil : J.str(x["check"])
             parsePhoto(x, into: &hole)
             ft.hole = hole
             feats.append(ft)

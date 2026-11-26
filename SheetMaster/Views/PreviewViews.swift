@@ -19,6 +19,16 @@ struct PartPreview: View {
             ctx.stroke(path(built.bendLines), with: .color(.cyan), style: StrokeStyle(lineWidth: 1 * lineScale, dash: [5, 4]))
             ctx.stroke(path(built.outline), with: .color(.white), lineWidth: 1.6 * lineScale)
             ctx.stroke(path(built.holes), with: .color(.red), lineWidth: 1.3 * lineScale)
+            // v3.0: 推定した所はオレンジ(穴はオレンジで重ね描き、頂点は丸で囲む)
+            if !built.checkHoles.isEmpty {
+                ctx.stroke(path(built.checkHoles), with: .color(.orange), lineWidth: 2 * lineScale)
+            }
+            for m in built.checkMarks {
+                let c = pt(m.pos)
+                let r: CGFloat = 7 * max(1, lineScale * 0.8)
+                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)),
+                           with: .color(.orange), lineWidth: 1.8)
+            }
 
             if showLabels {
                 // 全体寸法
@@ -37,7 +47,8 @@ struct PartPreview: View {
                 // 穴の径・位置
                 for l in built.holeLabels {
                     let p = pt(l.pos)
-                    ctx.draw(Text(l.text).font(.system(size: 9 * max(1, lineScale * 0.8))).foregroundStyle(.red),
+                    ctx.draw(Text(l.text).font(.system(size: 9 * max(1, lineScale * 0.8)))
+                                .foregroundStyle(l.check == nil ? Color.red : Color.orange),
                              at: CGPoint(x: p.x, y: p.y - 10))
                     if showPositions {
                         ctx.draw(Text(l.position).font(.system(size: 8 * max(1, lineScale * 0.8))).foregroundStyle(.orange),
@@ -79,11 +90,14 @@ extension PartPreview {
 }
 
 struct PreviewLegend: View {
+    /// v3.0: 推定した所があるときは「要確認」も出す
+    var showCheck: Bool = false
     var body: some View {
         HStack(spacing: 12) {
             legend(.white, "外形")
             legend(.red, "穴・切り抜き")
             legend(.cyan, "曲げ線(切らない)")
+            if showCheck { legend(.orange, "要確認") }
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
@@ -125,7 +139,7 @@ struct FullPreviewView: View {
                                 .onEnded { _ in lastOffset = offset })
                     )
                     .clipped()
-                PreviewLegend()
+                PreviewLegend(showCheck: !built.checkMarks.isEmpty)
                 Toggle("穴の位置(X, Y)を表示", isOn: $showPositions).padding(.horizontal)
                 Text("展開寸法 \(Fmt.num(built.width)) × \(Fmt.num(built.height)) mm ・ 穴 \(built.holeLabels.count)個 ・ 原点は左下")
                     .font(.footnote).foregroundStyle(.secondary)

@@ -18,6 +18,14 @@ struct HoleLabel: Hashable {
     /// v2.9: 写真の中の位置(何枚目、幅・高さに対する割合 0〜1)。無ければ nil
     var photoNo: Int? = nil
     var photo: P2? = nil
+    /// v3.0: 推定した穴(要確認)の理由
+    var check: String? = nil
+}
+
+/// v3.0: 推定した所(オレンジで表示する)
+struct CheckMark: Hashable {
+    var pos: P2
+    var note: String
 }
 
 struct BuiltPart {
@@ -30,6 +38,10 @@ struct BuiltPart {
     var height: Double = 0
     var warnings: [String] = []
     var blocking: [String] = []   // これがあるとDXFを出さない
+    /// v3.0: 推定した頂点・穴の位置と理由
+    var checkMarks: [CheckMark] = []
+    /// v3.0: 推定した穴の線(オレンジで重ね描き)
+    var checkHoles: [Seg] = []
 }
 
 enum Geometry {
@@ -142,7 +154,20 @@ enum Geometry {
                 label.photoNo = no
                 label.photo = P2(x: px, y: py)
             }
+            label.check = h.check
             return label
+        }
+
+        // v3.0: 推定した所(頂点・穴)
+        for v in f.outline {
+            if let c = v.check, !c.isEmpty { out.checkMarks.append(CheckMark(pos: P2(x: v.x, y: v.y), note: c)) }
+        }
+        for h in f.holes {
+            if let c = h.check, !c.isEmpty {
+                out.checkMarks.append(CheckMark(pos: holeCenter(h), note: c))
+                var dummy: [String] = []
+                out.checkHoles += holeSegments(h, warnings: &dummy)
+            }
         }
 
         // 4) 穴が外形の中にあるか

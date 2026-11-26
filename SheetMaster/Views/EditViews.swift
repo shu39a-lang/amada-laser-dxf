@@ -75,6 +75,9 @@ struct PartEditSheet: View {
                         DisclosureGroup("外形の頂点(上級者向け)") {
                             ForEach(flat.outline) { $v in
                                 VStack(alignment: .leading) {
+                                    if let c = v.check {
+                                        Text("要確認: " + c).font(.caption2).foregroundStyle(.orange)
+                                    }
                                     HStack {
                                         NumField(label: "X", value: $v.x)
                                         NumField(label: "Y", value: $v.y)
@@ -145,6 +148,7 @@ struct HoleEditor: View {
                 Text("異形の穴(数値の変更は「指示して読み直す」で)").font(.caption)
             }
             if !hole.note.isEmpty { Text(hole.note).font(.caption2).foregroundStyle(.secondary) }
+            if let c = hole.check { Text("要確認: " + c).font(.caption2).foregroundStyle(.orange) }
         }
     }
 }
@@ -299,6 +303,127 @@ struct FacesEditor: View {
         case "left": return "左辺"
         case "right": return "右辺"
         default: return "先端"
+        }
+    }
+}
+
+/// v3.0: 部品表に無い板を足して、その板だけ読みに行く
+struct AddPartSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let drawingID: UUID
+    @State private var name = "妻板"
+    @State private var hint = ""
+    @State private var sameAsMain = true
+    @State private var material = ""
+    @State private var thicknessText = ""
+    @State private var quantity = 2
+    @State private var running = false
+    @State private var errorText: String?
+    @State private var progressText = ""
+
+    /// 本体(1つ目のレーザー部品)
+    private var mainPart: Part? {
+        store.drawings.first { $0.id == drawingID }?.parts.first { $0.process == .laser }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("名前(例: 妻板)", text: $name)
+                    TextField("例: ①の矢印の下の台形も板。樋の両端をふさぐ", text: $hint, axis: .vertical)
+                        .lineLimit(3...8)
+                } header: {
+                    Text("どの板か(一言でOK)")
+                } footer: {
+                    Text("図面のどこに描かれている板かを普通の言葉で書いてください。寸法が無くても、本体の断面などから計算して形を作ります。推定した所はオレンジで表示されます。")
+                }
+                Section("材質・板厚・数量") {
+                    Toggle("本体と同じ材質・板厚", isOn: $sameAsMain)
+                    if sameAsMain {
+                        if let m = mainPart {
+                            Text("\(m.material.isEmpty ? "材質未確定" : m.material)  t\(m.thickness.map(Fmt.num) ?? "?")")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        TextField("材質(例: SPCC)", text: $material)
+                        TextField("板厚(例: 2.3)", text: $thicknessText).keyboardType(.decimalPad)
+                    }
+                    Stepper("数量 \(quantity)枚", value: $quantity, in: 1...999)
+                }
+                Section {
+                    Button {
+                        Task { await run() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if running { ProgressView() }
+                            Text(running ? (progressText.isEmpty ? "読み取り中…(数分かかります)" : progressText) : "追加して読む").bold()
+                            Spacer()
+                        }
+                    }
+                    .disabled(running || hint.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if let e = errorText { Text(e).foregroundStyle(.red).font(.footnote) }
+                }
+            }
+            .navigationTitle("板を追加して読む")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { dismiss() }.disabled(running) } }
+        }
+    }
+
+    @MainActor private func run() async {
+        guard let di = store.drawings.firstIndex(where: { $0.id == drawingID }) else { return }
+        running = true
+        errorText = nil
+        progressText = ""
+        let keep = KeepAwake()
+        keep.begin()
+        defer { running = false; keep.end() }
+
+        var p = Part()
+        let laserCount = store.drawings[di].parts.filter { $0.process == .laser }.count
+        p.partKey = "P\(store.drawings[di].parts.count + 1)"
+        p.name = (name.isEmpty ? "追加の板\(laserCount + 1)" : name) + "(追加)"
+        p.process = .laser
+        p.include = true
+        p.quantity = quantity
+        p.addedBy = "user"
+        p.userHint = hint
+        if sameAsMain, let m = mainPart {
+            p.material = m.material
+            p.thickness = m.thickness
+            p.thicknessSource = m.thickness == nil ? "unknown" : "user"
+        } else {
+            p.material = material
+            p.thickness = Double(thicknessText.replacingOccurrences(of: ",", with: "."))
+            p.thicknessSource = p.thickness == nil ? "unknown" : "user"
+        }
+        // 先に部品を足しておく(読み取りに失敗しても「指示して読み直す」でやり直せる)
+        store.drawings[di].parts.append(p)
+        store.save()
+
+        let d = store.drawings[di]
+        let imgs = d.imageFiles.compactMap { store.loadImage($0) }
+        guard !imgs.isEmpty else { errorText = "元の写真がありません"; return }
+        let reader = DrawingReader(apiKey: store.apiKey, settings: store.settings)
+        do {
+            let f = try await reader.reread(part: p, drawing: d, images: imgs) { text in progressText = text }
+            if let di2 = store.drawings.firstIndex(where: { $0.id == drawingID }),
+               let pi2 = store.drawings[di2].parts.firstIndex(where: { $0.id == p.id }) {
+                store.drawings[di2].parts[pi2].flat = f
+                store.drawings[di2].parts[pi2].readError = nil
+                store.save()
+            }
+            dismiss()
+        } catch {
+            if let di2 = store.drawings.firstIndex(where: { $0.id == drawingID }),
+               let pi2 = store.drawings[di2].parts.firstIndex(where: { $0.id == p.id }) {
+                store.drawings[di2].parts[pi2].readError = error.localizedDescription
+                store.save()
+            }
+            errorText = error.localizedDescription + "(部品は追加済みです。カードの「指示して読み直す」でやり直せます)"
         }
     }
 }

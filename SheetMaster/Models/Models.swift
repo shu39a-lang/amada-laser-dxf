@@ -34,8 +34,10 @@ struct OutlineVertex: Codable, Hashable, Identifiable {
     var cornerType: CornerType = .none
     var cornerSize: Double = 0
     var arcToNext: ArcSpec? = nil
+    /// v3.0: 推定した頂点(要確認)。理由の文章。nil なら確かな頂点
+    var check: String? = nil
 
-    enum CodingKeys: String, CodingKey { case x, y, cornerType, cornerSize, arcToNext }
+    enum CodingKeys: String, CodingKey { case x, y, cornerType, cornerSize, arcToNext, check }
 }
 
 enum HoleType: String, Codable, CaseIterable, Identifiable {
@@ -78,9 +80,11 @@ struct Hole: Codable, Hashable, Identifiable {
     var photoNo: Int? = nil
     var photoX: Double? = nil
     var photoY: Double? = nil
+    /// v3.0: 推定した穴(要確認)。理由の文章
+    var check: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case type, cx, cy, d, x1, y1, x2, y2, width, w, h, angle, cornerR, points, note, photoNo, photoX, photoY
+        case type, cx, cy, d, x1, y1, x2, y2, width, w, h, angle, cornerR, points, note, photoNo, photoX, photoY, check
     }
 }
 
@@ -234,6 +238,8 @@ struct Part: Codable, Hashable, Identifiable {
     var readError: String? = nil
     var userHint: String = ""
     var include: Bool = true
+    /// v3.0: 部品表に無い板。"ai" = AIが見つけて追加、"user" = 作業者が「板を追加して読む」で追加。nil = 部品表どおり
+    var addedBy: String? = nil
 
     var groupKey: String {
         let mat = material.isEmpty ? "材質未確定" : material
@@ -243,7 +249,7 @@ struct Part: Codable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case partKey, name, material, thickness, thicknessSource, thicknessEvidence, process,
-             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include
+             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include, addedBy
     }
 }
 
@@ -283,7 +289,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "2.9"
+    static let version = "3.0"
 }
 
 enum Fmt {
