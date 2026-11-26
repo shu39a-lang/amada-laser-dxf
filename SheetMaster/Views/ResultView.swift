@@ -56,7 +56,13 @@ struct ResultView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("レーザー対象外(データは作りません)").font(.subheadline.bold())
                             ForEach(others) { p in
-                                Text("・\(p.name)(\(p.process.label))").font(.footnote)
+                                HStack {
+                                    Text("・\(p.name)(\(p.process.label))").font(.footnote)
+                                    Spacer()
+                                    // AIが板を対象外に分けてしまったとき用
+                                    Button("板として読む") { makeLaser(p.id) }
+                                        .font(.caption).buttonStyle(.bordered)
+                                }
                             }
                         }
                         .foregroundStyle(.secondary)
@@ -130,6 +136,16 @@ struct ResultView: View {
             Text("図面が見つかりません")
         }
     }
+
+    /// 対象外の部品をレーザー部品に変えて、読み直しの画面を開く
+    private func makeLaser(_ partID: UUID) {
+        guard let di = store.drawings.firstIndex(where: { $0.id == drawingID }),
+              let pi = store.drawings[di].parts.firstIndex(where: { $0.id == partID }) else { return }
+        store.drawings[di].parts[pi].process = .laser
+        store.drawings[di].parts[pi].include = true
+        store.save()
+        rereading = PartRef(id: partID)
+    }
 }
 
 /// 部品1枚分のカード
@@ -164,6 +180,9 @@ struct PartCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("形を読み取れませんでした").font(.headline).foregroundStyle(.red)
                     if let e = part.readError { Text(e).font(.caption).foregroundStyle(.red.opacity(0.8)).lineLimit(4) }
+                    else {
+                        ForEach(built.blocking, id: \.self) { Text("・" + $0).font(.caption).foregroundStyle(.red.opacity(0.8)) }
+                    }
                     Text("「指示して読み直す」を押してください").font(.caption).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)

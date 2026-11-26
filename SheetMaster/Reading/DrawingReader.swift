@@ -137,8 +137,54 @@ struct DrawingReader {
 
     // MARK: - 段階B
 
+    /// v2.7: 1回目の回答から外形が作れなければ、理由を添えて1回だけ自動で読み直す
+    ///  (長円・円弧の板に曲げがある部品などで「形を読み取れませんでした」になっていた対策)
     private func flatPattern(for part: Part, drawing: DrawingRecord, images: [PreparedImage],
                              onProgress: @escaping (Int) -> Void) async throws -> FlatPattern {
+        let first: FlatPattern
+        do {
+            first = try await flatPatternOnce(for: part, drawing: drawing, images: images,
+                                              retryNote: nil, onProgress: onProgress)
+        } catch ClaudeError.truncated {
+            // 64000でも切れた → 説明を短くさせて再送
+            return try await flatPatternOnce(for: part, drawing: drawing, images: images,
+                                             retryNote: "前回は回答が長すぎて途中で切れました。analysis は200字以内、uncertain は5件以内にして、座標だけを確実に返してください。",
+                                             onProgress: onProgress)
+        }
+        let problem = Self.shapeProblem(first, part: part, settings: settings)
+        guard let reason = problem else { return first }
+        let note = """
+        前回の回答では展開形状を作れませんでした(理由: \(reason))。
+        ・基準面に円弧の端・長円・斜めカットがあり、一部の辺にだけフランジがある部品は developed_by="outer_dims" で、outline(円弧は arc_to_next)と bends(start/end付き)を書く。
+        ・曲げの無い板(帯板を含む)は developed_by="flat" で outline を3点以上書く。
+        ・faces を使う場合は width・height・flanges を必ず入れる。
+        """
+        do {
+            let second = try await flatPatternOnce(for: part, drawing: drawing, images: images,
+                                                   retryNote: note, onProgress: onProgress)
+            return Self.shapeProblem(second, part: part, settings: settings) == nil ? second : first
+        } catch {
+            return first
+        }
+    }
+
+    /// 外形が作れない・頂点が足りない等の、読み直しが必要な問題(無ければ nil)
+    static func shapeProblem(_ f: FlatPattern, part: Part, settings: AppSettings) -> String? {
+        var tmp = part
+        tmp.flat = f
+        if tmp.thickness == nil { tmp.thickness = 1 }   // 板厚未確定は読み直しの理由にしない
+        let b = Geometry.build(part: tmp, settings: settings)
+        if b.outline.isEmpty {
+            let r = b.blocking.filter { !$0.contains("控除表") && !$0.contains("板厚") }
+            return r.isEmpty ? (b.blocking.isEmpty ? "外形が空でした" : nil) : r.joined(separator: " / ")
+        }
+        if b.width < 1 || b.height < 1 { return "外形の大きさが0でした" }
+        return nil
+    }
+
+    private func flatPatternOnce(for part: Part, drawing: DrawingRecord, images: [PreparedImage],
+                                 retryNote: String?,
+                                 onProgress: @escaping (Int) -> Void) async throws -> FlatPattern {
         var content = ClaudeClient.imageBlocks(images, cacheLast: true)
         let others = drawing.parts.filter { $0.id != part.id }
             .map { "\($0.partKey) \($0.name)(\($0.process.label)、t\($0.thickness.map(Fmt.num) ?? "?"))" }
@@ -153,6 +199,9 @@ struct DrawingReader {
         """
         if !part.userHint.isEmpty {
             text += "\n\n【作業者からの指示(最優先)】\n\(part.userHint)"
+        }
+        if let note = retryNote {
+            text += "\n\n【読み直しの理由】\n\(note)"
         }
         content.append(["type": "text", "text": text])
         let system = Prompts.flatSystem(tapTable: settings.tapDrills)
@@ -237,6 +286,9 @@ struct DrawingReader {
             bend.angleDeg = J.num(b["angle_deg"]) ?? 90
             bend.up = J.str(b["direction"]) != "down"
             bend.note = J.str(b["note"])
+            bend.from = J.num(b["start"])
+            bend.to = J.num(b["end"])
+            if let a = bend.from, let z = bend.to, a > z { bend.from = z; bend.to = a }
             return bend
         }
         f.keyDimensions = J.arr(o["key_dimensions"]).compactMap { (k) -> KeyDimension? in

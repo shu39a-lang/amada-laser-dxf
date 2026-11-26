@@ -72,7 +72,13 @@ enum Geometry {
                 out.warnings.append("全体寸法の不一致: \(k.label) 図面\(Fmt.num(k.value)) / 外形\(Fmt.num(a))")
             }
         }
-        if f.developedBy == .outerDims && !f.bends.isEmpty {
+        // 円弧・斜め辺のある板(長円カバー等)は外寸並べが正しい方式。長方形だけの箱形のときだけ知らせる
+        var hasCurveOrSlant = false
+        for i in 0..<f.outline.count {
+            let a = f.outline[i], b = f.outline[(i + 1) % f.outline.count]
+            if a.arcToNext != nil || (abs(a.x - b.x) > 0.01 && abs(a.y - b.y) > 0.01) { hasCurveOrSlant = true; break }
+        }
+        if f.developedBy == .outerDims && !f.bends.isEmpty && !hasCurveOrSlant {
             out.warnings.append("旧方式(外寸並べ)の展開です。箱形の角の寸法がずれることがあります。「指示して読み直す」で新方式になります")
         }
 
@@ -149,8 +155,18 @@ enum Geometry {
         let ys = f.bends.filter { $0.axis == .y }.sorted { $0.position < $1.position }
         let xd = xs.map { ($0.position, ded($0)) }
         let yd = ys.map { ($0.position, ded($0)) }
-        func sx(_ x: Double) -> Double { x - xd.filter { $0.0 < x - 0.001 }.reduce(0) { $0 + $1.1 } }
-        func sy(_ y: Double) -> Double { y - yd.filter { $0.0 < y - 0.001 }.reduce(0) { $0 + $1.1 } }
+        // v2.7: 曲げ線の上の点(外寸の角)は、展開後の曲げ線の位置(控除の半分だけ手前)に寄せる。
+        //  v2.6までは曲げ線上の点が動かず、長円の板の円弧の端とフランジの角が2mmほど食い違って外形が壊れていた
+        func shift(_ v: Double, _ list: [(Double, Double)]) -> Double {
+            var s = v
+            for (pos, d) in list {
+                if pos < v - 0.001 { s -= d }
+                else if abs(pos - v) <= 0.001 { s -= d / 2 }
+            }
+            return s
+        }
+        func sx(_ x: Double) -> Double { shift(x, xd) }
+        func sy(_ y: Double) -> Double { shift(y, yd) }
         func sp(_ p: P2) -> P2 { P2(x: sx(p.x), y: sy(p.y)) }
 
         var g = f
@@ -159,6 +175,17 @@ enum Geometry {
             n.x = sx(v.x); n.y = sy(v.y)
             if let a = v.arcToNext { n.arcToNext = ArcSpec(cx: sx(a.cx), cy: sy(a.cy), clockwise: a.clockwise) }
             return n
+        }
+        // 円弧が曲げ線をまたぐと半径が合わなくなるので知らせる
+        let n0 = f.outline.count
+        for i in 0..<n0 {
+            guard let a = g.outline[i].arcToNext else { continue }
+            let c = P2(x: a.cx, y: a.cy)
+            let p = P2(x: g.outline[i].x, y: g.outline[i].y)
+            let q = P2(x: g.outline[(i + 1) % n0].x, y: g.outline[(i + 1) % n0].y)
+            if abs(dist(c, p) - dist(c, q)) > 0.05 {
+                warnings.append("頂点\(i + 1)の円弧が曲げ線にかかっています(展開後の半径 \(Fmt.num(dist(c, p))) / \(Fmt.num(dist(c, q))))。逃げ・形を確認してください")
+            }
         }
         g.holes = f.holes.map { h in
             var n = h
@@ -170,8 +197,11 @@ enum Geometry {
         }
         g.bends = f.bends.map { b in
             var n = b
-            let d = ded(b)
-            n.position = (b.axis == .x ? sx(b.position) : sy(b.position)) - d / 2
+            // 曲げ線上の点として寄せる(shift が控除の半分を引く)
+            n.position = b.axis == .x ? sx(b.position) : sy(b.position)
+            // 曲げ線の範囲(縦線ならY、横線ならX)も展開座標に直す
+            if b.axis == .x { n.from = b.from.map(sy); n.to = b.to.map(sy) }
+            else { n.from = b.from.map(sx); n.to = b.to.map(sx) }
             return n
         }
         g.developedBy = .flat
