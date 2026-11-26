@@ -151,7 +151,28 @@ struct FullPreviewView: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } } }
+            .toolbar {
+                if loadImages != nil {
+                    // v2.9: 画面の上にも「見比べる」(下のボタンが画面外に隠れる機種でも押せるように)
+                    ToolbarItem(placement: .topBarLeading) { Button("見比べる") { showCompare = true } }
+                }
+                ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } }
+            }
+        }
+    }
+}
+
+/// v2.9: 部品カードから直接開く見比べ画面(閉じるボタン付き)
+struct CompareSheet: View {
+    let title: String
+    let built: BuiltPart
+    let loadImages: () -> [UIImage]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            CompareView(title: title, built: built, loadImages: loadImages)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } } }
         }
     }
 }

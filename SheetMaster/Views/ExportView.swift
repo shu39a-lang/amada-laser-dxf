@@ -69,7 +69,17 @@ struct ExportView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: make)
         .sheet(isPresented: $showShare) { ShareSheet(items: files.map(\.url)) }
-        .sheet(item: $zoom) { f in FullPreviewView(title: f.title, built: f.built) }
+        .sheet(item: $zoom) { f in
+            // v2.9: ここからも見比べられるようにする(勝手違いは写真と左右が逆なので除く)
+            if f.title.contains("勝手違い") {
+                FullPreviewView(title: f.title, built: f.built)
+            } else {
+                FullPreviewView(title: f.title, built: f.built, loadImages: {
+                    guard let d = store.drawings.first(where: { $0.id == drawingID }) else { return [] }
+                    return d.imageFiles.compactMap { store.loadImage($0) }
+                })
+            }
+        }
     }
 
     private func make() {

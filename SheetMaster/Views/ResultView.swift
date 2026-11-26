@@ -11,6 +11,7 @@ struct ResultView: View {
     @State private var editing: PartRef?
     @State private var rereading: PartRef?
     @State private var zooming: PartRef?
+    @State private var comparing: PartRef?
     @State private var showExport = false
     @State private var showOriginal = false
 
@@ -49,7 +50,8 @@ struct ResultView: View {
                         PartCard(number: pair.offset + 1, part: pair.element, settings: store.settings,
                                  onEdit: { editing = PartRef(id: pair.element.id) },
                                  onReread: { rereading = PartRef(id: pair.element.id) },
-                                 onZoom: { zooming = PartRef(id: pair.element.id) })
+                                 onZoom: { zooming = PartRef(id: pair.element.id) },
+                                 onCompare: { comparing = PartRef(id: pair.element.id) })
                     }
 
                     if !others.isEmpty {
@@ -112,6 +114,12 @@ struct ResultView: View {
                                     loadImages: { d.imageFiles.compactMap { store.loadImage($0) } })
                 }
             }
+            .sheet(item: $comparing) { ref in
+                if let p = d.parts.first(where: { $0.id == ref.id }) {
+                    CompareSheet(title: p.name, built: Geometry.build(part: p, settings: store.settings),
+                                 loadImages: { d.imageFiles.compactMap { store.loadImage($0) } })
+                }
+            }
             .navigationDestination(isPresented: $showExport) {
                 ExportView(drawingID: drawingID)
             }
@@ -157,6 +165,7 @@ struct PartCard: View {
     var onEdit: () -> Void
     var onReread: () -> Void
     var onZoom: () -> Void
+    var onCompare: () -> Void = {}
 
     var body: some View {
         let built = Geometry.build(part: part, settings: settings)
@@ -177,6 +186,15 @@ struct PartCard: View {
                     Button(action: onZoom) { Label("拡大", systemImage: "arrow.up.left.and.arrow.down.right") }
                         .font(.caption)
                 }
+                // v2.9: データのすぐ下に「図面と見比べる」
+                Button(action: onCompare) {
+                    Label("図面と見比べる", systemImage: "rectangle.split.2x1")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .foregroundStyle(.black)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("形を読み取れませんでした").font(.headline).foregroundStyle(.red)
