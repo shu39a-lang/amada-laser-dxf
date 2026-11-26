@@ -503,3 +503,93 @@ enum J {
         return nil
     }
 }
+
+/// v3.2: 見比べ画面で、作業者がタップした所に描かれている部品を写真の中から探し、
+///  外形の角の位置(ピクセル)を答えてもらって、写真の縮尺・傾きを合わせる
+enum PartLocator {
+    struct Corner { let label: String; let mm: P2 }
+
+    /// 外形の角(重なりを除いて最大10点)
+    static func corners(_ built: BuiltPart) -> [Corner] {
+        var pts: [P2] = []
+        func add(_ p: P2) { if !pts.contains(where: { Geometry.dist($0, p) < 1 }) { pts.append(p) } }
+        for sg in built.outline {
+            switch sg {
+            case .line(let a, let b): add(a); add(b)
+            case .arc(let c, let r, let s0, let e0):
+                for a in [s0, e0] {
+                    let t = a * .pi / 180
+                    add(P2(x: c.x + r * cos(t), y: c.y + r * sin(t)))
+                }
+            case .circle: break
+            }
+        }
+        if pts.count > 10 {
+            let step = Double(pts.count) / 10
+            pts = (0..<10).map { pts[Int(Double($0) * step)] }
+        }
+        return pts.enumerated().map { Corner(label: "P\($0.offset + 1)", mm: $0.element) }
+    }
+
+    static let schema = """
+    {"type": "object", "properties": {
+      "found": {"type": "boolean"},
+      "points": {"type": "array", "items": {"type": "object", "properties": {
+        "label": {"type": "string"}, "px": {"type": "number"}, "py": {"type": "number"}}, "required": ["label", "px", "py"]}},
+      "note": {"type": "string"}},
+     "required": ["found", "points"]}
+    """
+
+    static func locate(apiKey: String, model: String, image: UIImage, photoNo: Int, tap: CGPoint,
+                       partName: String, built: BuiltPart) async throws -> PhotoAlignment? {
+        let cs = corners(built)
+        guard cs.count >= 2 else { return nil }
+        // タップした所に赤い丸と十字を描き込んでから送る
+        let W = image.size.width, H = image.size.height
+        let marked = UIGraphicsImageRenderer(size: image.size, format: {
+            let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = true; return f
+        }()).image { ctx in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+            let r = max(W, H) * 0.025
+            let c = ctx.cgContext
+            c.setStrokeColor(UIColor.red.cgColor)
+            c.setLineWidth(max(2, max(W, H) * 0.004))
+            c.strokeEllipse(in: CGRect(x: tap.x - r, y: tap.y - r, width: r * 2, height: r * 2))
+            c.move(to: CGPoint(x: tap.x - r * 1.6, y: tap.y)); c.addLine(to: CGPoint(x: tap.x + r * 1.6, y: tap.y))
+            c.move(to: CGPoint(x: tap.x, y: tap.y - r * 1.6)); c.addLine(to: CGPoint(x: tap.x, y: tap.y + r * 1.6))
+            c.strokePath()
+        }
+        let sent = ImagePreprocessor.resized(marked, maxEdge: ImagePreprocessor.maxEdge)
+        let sw = sent.size.width * sent.scale, sh = sent.size.height * sent.scale
+        let ratio = Double(sw / W)
+        guard let jpeg = ImagePreprocessor.jpeg(sent, quality: 0.85) else { return nil }
+
+        let list = cs.map { "\($0.label) (\(Fmt.num($0.mm.x)), \(Fmt.num($0.mm.y)))" }.joined(separator: "\n")
+        var content = ClaudeClient.imageBlocks([PreparedImage(label: "図面の写真(幅\(Int(sw))×高さ\(Int(sh))ピクセル)。赤い丸と十字は作業者がタップした所", jpeg: jpeg)], cacheLast: false)
+        content.append(["type": "text", "text": """
+        赤い丸の近くに描かれている部品「\(partName)」の外形を写真の中で探してください。
+        この部品の外形(mm、原点は形の左下、Xは右、Yは上)の大きさは 横\(Fmt.num(built.width))×縦\(Fmt.num(built.height))で、角は次のとおりです:
+        \(list)
+        写真の中で、それぞれの角が描かれている位置を、上の画像のピクセル座標(左上が0,0、右・下が正)で答えてください。
+        ・図面のビューに描かれている形のうち、この外形と同じ形の線を探す(縮尺は図面の尺度のまま、向きは図面どおり)
+        ・見つかった角だけでよい。できるだけ離れた角を3点以上、数ピクセルの精度で
+        ・見つからなければ found=false
+        """])
+        let system = "あなたは板金図面の読み取り担当です。図面の写真の中で、指定された部品の外形の角の位置を正確に答えます。"
+        let client = ClaudeClient(apiKey: apiKey, model: model)
+        let out = try await client.callTool(system: system, content: content, toolName: "report_corners",
+                                            toolDescription: "部品の角の写真上の位置を報告する",
+                                            inputSchemaJSON: schema, maxTokens: 8000, thinkingBudget: 3000)
+        guard (out["found"] as? Bool) != false else { return nil }
+        var z: [(Double, Double)] = []
+        var w: [(Double, Double)] = []
+        for p in J.arr(out["points"]) {
+            guard let c = cs.first(where: { $0.label == J.str(p["label"]) }),
+                  let px = J.num(p["px"]), let py = J.num(p["py"]) else { continue }
+            z.append((c.mm.x, -c.mm.y))
+            w.append((px / ratio, py / ratio))
+        }
+        guard let r = PhotoAlignment.solve(z, w) else { return nil }
+        return PhotoAlignment(image: image, photoNo: photoNo, ar: r.0, ai: r.1, br: r.2, bi: r.3, manual: true)
+    }
+}

@@ -370,6 +370,10 @@ struct ComparePane: View {
     var activePick: Int? = nil
     var tapped: [CGPoint] = []
     var onTapPhoto: ((CGPoint) -> Void)? = nil
+    /// v3.2: 指でなぞって四角で囲んだ範囲(写真のピクセル)
+    var onDragBox: ((CGRect) -> Void)? = nil
+    @State private var dragStart: CGPoint?
+    @State private var dragNow: CGPoint?
 
     var body: some View {
         GeometryReader { geo in
@@ -386,6 +390,12 @@ struct ComparePane: View {
                     } else {
                         let fit = PhotoFit(size: size, image: img, focus: focus, zoom: focusZoom)
                         g.draw(Image(uiImage: img), in: fit.rect)
+                        // なぞっている四角
+                        if let a = dragStart, let b = dragNow {
+                            let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+                            ctx.fill(Path(r), with: .color(.orange.opacity(0.15)))
+                            ctx.stroke(Path(r), with: .color(.orange), style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                        }
                         // タップした点(A, B)
                         for (i, p) in tapped.enumerated() {
                             let c = fit.toScreen(p)
@@ -443,6 +453,22 @@ struct ComparePane: View {
                 }
             }
             .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { v in
+                        dragStart = v.startLocation
+                        dragNow = v.location
+                    }
+                    .onEnded { v in
+                        defer { dragStart = nil; dragNow = nil }
+                        guard let cb = onDragBox, let img = image else { return }
+                        let fit = PhotoFit(size: geo.size, image: img, focus: focus, zoom: focusZoom)
+                        let a = fit.toPixel(v.startLocation), b = fit.toPixel(v.location)
+                        let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+                        if r.width > 8 || r.height > 8 { cb(r) }
+                    },
+                including: (onDragBox != nil && kind == .photo && align == nil) ? .all : .none
+            )
             .onTapGesture { loc in
                 guard let cb = onTapPhoto, kind == .photo, align == nil, let img = image else { return }
                 let fit = PhotoFit(size: geo.size, image: img, focus: focus, zoom: focusZoom)
@@ -463,8 +489,10 @@ struct CompareView: View {
     var savedAlign: [Double]? = nil
     var onSaveAlign: (([Double]?) -> Void)? = nil
 
-    /// 手で合わせる手順
-    enum Step { case none, area, pointA, pointB }
+    /// 合わせる手順
+    ///  choose = タップ(AIが探す)か、なぞって囲む / fineArea〜pointB = A・Bの2点で細かく合わせる
+    enum Step { case none, choose, fineArea, pointA, pointB }
+    @Environment(AppStore.self) private var store
 
     @State private var images: [UIImage] = []
     @State private var loaded = false
@@ -482,6 +510,8 @@ struct CompareView: View {
     @State private var focus: CGPoint?
     @State private var focusZoom: CGFloat = 1
     @State private var tapped: [CGPoint] = []
+    @State private var locating = false
+    @State private var locateError: String?
 
     /// これ以上ずれていたら知らせる(mm)
     private var limit: Double { max(5, max(built.width, built.height) * 0.02) }
@@ -558,6 +588,16 @@ struct CompareView: View {
                 }
             }
             .frame(maxHeight: .infinity)
+            .overlay {
+                if locating {
+                    VStack(spacing: 8) {
+                        ProgressView()
+                        Text("AIが写真の中の部品を探しています…(10〜30秒)").font(.caption.bold())
+                    }
+                    .padding(16)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(.ultraThinMaterial))
+                }
+            }
             .gesture(
                 MagnifyGesture()
                     .onChanged { v in scale = max(1, min(8, lastScale * v.magnification)) }
@@ -567,7 +607,8 @@ struct CompareView: View {
                             offset = CGSize(width: lastOffset.width + v.translation.width,
                                             height: lastOffset.height + v.translation.height)
                         }
-                        .onEnded { _ in lastOffset = offset })
+                        .onEnded { _ in lastOffset = offset }),
+                including: step == .none ? .all : .subviews
             )
 
             if overlay && align != nil {
@@ -609,15 +650,69 @@ struct CompareView: View {
         focus = nil
         focusZoom = 1
         tapped = []
-        step = .area
+        locateError = nil
+        step = .choose
         resetZoom()
+    }
+
+    private var photoNo: Int {
+        guard let img = currentImage else { return 1 }
+        return (images.firstIndex(of: img) ?? photoIndex) + 1
+    }
+
+    private func finish(_ al: PhotoAlignment) {
+        align = al
+        step = .none
+        overlay = true          // 合ったかどうかが一目で分かるよう、重ねて見せる
+        resetZoom()
+        onSaveAlign?(al.saved)
+    }
+
+    /// v3.2: なぞって囲んだ四角に、データの外形がぴったり入るように合わせる(すぐ・AIなし)
+    private func alignToBox(_ r: CGRect) {
+        guard let img = currentImage else { return }
+        let W = max(built.width, 1), H = max(built.height, 1)
+        let kw = Double(r.width) / W, kh = Double(r.height) / H
+        // 細長い部品は長い方の辺で縮尺を決める(短い方は囲み方のずれが大きく出るため)
+        let k: Double
+        if W / H > 3 || r.height < 10 { k = kw }
+        else if H / W > 3 || r.width < 10 { k = kh }
+        else { k = (kw + kh) / 2 }
+        guard k > 0 else { return }
+        // 中心を合わせる。z = x − i·y(mm)、w = k·z + b
+        let br = Double(r.midX) - k * (W / 2)
+        let bi = Double(r.midY) - k * (-H / 2)
+        finish(PhotoAlignment(image: img, photoNo: photoNo, ar: k, ai: 0, br: br, bi: bi, manual: true))
+    }
+
+    /// v3.2: タップした所の部品をAIに探してもらって合わせる
+    private func locateByTap(_ px: CGPoint) {
+        guard let img = currentImage, !locating else { return }
+        locating = true
+        locateError = nil
+        let key = store.apiKey, model = store.settings.model, no = photoNo
+        Task { @MainActor in
+            defer { locating = false }
+            do {
+                if let al = try await PartLocator.locate(apiKey: key, model: model, image: img, photoNo: no,
+                                                         tap: px, partName: title, built: built) {
+                    finish(al)
+                } else {
+                    locateError = "写真の中でこの部品を見つけられませんでした。部品の形を指でなぞって四角で囲んでください"
+                }
+            } catch {
+                locateError = "AIに聞けませんでした(\(error.localizedDescription))。部品の形を指でなぞって四角で囲んでください"
+            }
+        }
     }
 
     private func resetZoom() { scale = 1; lastScale = 1; offset = .zero; lastOffset = .zero }
 
     private func handleTap(_ px: CGPoint) {
         switch step {
-        case .area:
+        case .choose:
+            locateByTap(px)
+        case .fineArea:
             // 1回目: タップした所を中心に拡大
             focus = px
             focusZoom = 3
@@ -634,10 +729,7 @@ struct CompareView: View {
                 step = .pointA
                 return
             }
-            align = al
-            step = .none
-            resetZoom()
-            onSaveAlign?(al.saved)
+            finish(al)
         case .none:
             break
         }
@@ -647,12 +739,20 @@ struct CompareView: View {
     private var guide: some View {
         VStack(spacing: 6) {
             switch step {
-            case .area:
+            case .choose:
+                guideText("左の写真で、この部品の所をタップしてください(AIが探して自動で合わせます)。または、部品の形を指でなぞって四角で囲んでください(すぐ合います)")
+                if let e = locateError {
+                    Text(e).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center).padding(.horizontal)
+                }
+                Button("A・Bの2点で細かく合わせる") { focus = nil; focusZoom = 1; tapped = []; step = .fineArea }
+                    .font(.caption).buttonStyle(.bordered)
+            case .fineArea:
                 guideText("① 左の写真で、この部品が描かれている所をタップしてください(その所を拡大します)")
+                Button("簡単な合わせ方に戻る") { startAlign() }.font(.caption).buttonStyle(.bordered)
             case .pointA:
                 guideText("② 右のデータの「A」の角と同じ所を、左の写真でタップしてください")
                 HStack {
-                    Button("拡大をやり直す") { focus = nil; focusZoom = 1; tapped = []; step = .area }
+                    Button("拡大をやり直す") { focus = nil; focusZoom = 1; tapped = []; step = .fineArea }
                     Button("もっと拡大") { focusZoom = min(focusZoom * 1.6, 12) }
                 }
                 .font(.caption).buttonStyle(.bordered)
@@ -691,14 +791,16 @@ struct CompareView: View {
     }
 
     private func pane(_ k: ComparePane.Kind) -> some View {
-        let aligning = step != .none
+        let aligning = step != .none && !locating
+        let fine = step == .fineArea || step == .pointA || step == .pointB
         return ComparePane(kind: k, built: built, image: currentImage, align: align,
                            selected: selected, photoOpacity: k == .overlay ? photoOpacity : 1,
                            focus: focus, focusZoom: focusZoom,
-                           pickPoints: aligning || align?.manual == true ? pickPoints : [],
+                           pickPoints: fine ? pickPoints : [],
                            activePick: step == .pointA ? 0 : (step == .pointB ? 1 : nil),
                            tapped: tapped,
-                           onTapPhoto: aligning ? { handleTap($0) } : nil)
+                           onTapPhoto: aligning ? { handleTap($0) } : nil,
+                           onDragBox: (aligning && step == .choose) ? { alignToBox($0) } : nil)
             .scaleEffect(scale)
             .offset(offset)
             .clipped()
@@ -707,7 +809,7 @@ struct CompareView: View {
 
     private func statusText(_ al: PhotoAlignment) -> String {
         if al.manual {
-            return "タップした A・B の2点で、写真の縮尺・傾きをデータに合わせています(写真\(al.photoNo))。A・B の位置がずれていたら「合わせ直す」を押してください"
+            return "写真をデータと同じ大きさ・向きに合わせて重ねています(写真\(al.photoNo))。白い線と図面の線がずれていたら「写真を合わせ直す」を押してください"
         }
         let bad = al.residual.values.filter { $0 > limit }.count
         var t = "穴\(al.used)か所の位置で、写真の縮尺・傾きをデータに合わせています(写真\(al.photoNo))"
