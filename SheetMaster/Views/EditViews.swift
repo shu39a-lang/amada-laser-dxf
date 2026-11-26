@@ -187,16 +187,16 @@ struct RereadSheet: View {
                 }
                 Section {
                     Button {
+                        guard !running else { return }
                         Task { await run() }
                     } label: {
                         HStack {
                             Spacer()
-                            if running { ProgressView() }
+                            if running { SpinningGear(size: 20) }
                             Text(running ? (progressText.isEmpty ? "読み取り中…(数分かかります)" : progressText) : "読み直す").bold()
                             Spacer()
                         }
                     }
-                    .disabled(running)
                     if let e = errorText { Text(e).foregroundStyle(.red).font(.footnote) }
                 }
             }
@@ -366,16 +366,17 @@ struct AddPartSheet: View {
                 }
                 Section {
                     Button {
+                        guard !running else { return }
                         Task { await run() }
                     } label: {
                         HStack {
                             Spacer()
-                            if running { ProgressView() }
+                            if running { SpinningGear(size: 20) }
                             Text(running ? (progressText.isEmpty ? "読み取り中…(数分かかります)" : progressText) : "追加して読む").bold()
                             Spacer()
                         }
                     }
-                    .disabled(running || hint.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!running && hint.trimmingCharacters(in: .whitespaces).isEmpty)
                     if let e = errorText { Text(e).foregroundStyle(.red).font(.footnote) }
                 }
             }

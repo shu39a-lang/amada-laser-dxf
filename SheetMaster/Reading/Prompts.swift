@@ -12,7 +12,7 @@ enum Prompts {
 写真は「全体」と「拡大(タイル)」に分けて渡します。小さい数字は拡大画像で読み、位置関係は全体画像で確認してください。
 
 【必ず読むもの】
-- 表題欄: 品名、材質(SUS304、SPCC、SPHC、SS400、A5052など)、図番、尺度、処理、注記(「日新エッジ仕上げ」「指示なき角部はR1〜2」など)
+- 表題欄: 図面を出した会社名(例: 日新電子工業株式会社。company に入れる)、品名、材質(SUS304、SPCC、SPHC、SS400、A5052など)、図番、尺度、処理、注記(「日新エッジ仕上げ」「指示なき角部はR1〜2」など)
 - 部品表(No./数量/品番): 「本図通り」「勝手違い」の行。打ち消し線が引かれた行は無効、蛍光ペンで塗られた行は有効
 - 赤いスタンプ(製番・数・処理・納期・備考)の手書き文字。「各1」は本図通り・勝手違いを各1個
 - 図中の手書きメモ・けがき寸法・「在庫有り」などの書き込み
@@ -55,6 +55,7 @@ report_inventory ツールで返す。最初に analysis に、どのビュー�
   "analysis": {"type": "string", "description": "ビュー構成と部品の切り分けの考え方(先に書く)"},
   "drawing_number": {"type": "string"},
   "title": {"type": "string", "description": "品名"},
+  "company": {"type": "string", "description": "図面を出した会社名(表題欄の社名)"},
   "product_number": {"type": "string", "description": "製番(スタンプ)"},
   "default_material": {"type": "string"},
   "notes": {"type": "array", "items": {"type": "string"}, "description": "加工に関係する注記・手書きメモ"},

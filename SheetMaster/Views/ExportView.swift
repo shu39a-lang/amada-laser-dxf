@@ -19,6 +19,29 @@ struct ExportView: View {
                         .font(.subheadline)
                 }
             }
+            if made && !files.isEmpty {
+                // v3.5: 「ファイル」アプリに自動で保存した場所
+                Section {
+                    HStack {
+                        Text("会社名").foregroundStyle(.secondary)
+                        TextField("例: 日新電子工業", text: companyBinding)
+                    }
+                    let folders = Array(Set(files.compactMap(\.savedFolder))).sorted()
+                    if folders.isEmpty {
+                        Text("「ファイル」アプリへの保存に失敗しました").foregroundStyle(.red).font(.footnote)
+                    } else {
+                        ForEach(folders, id: \.self) { f in
+                            Label(f, systemImage: "folder.fill").font(.footnote)
+                        }
+                    }
+                    Button("この会社名で保存し直す") { make() }
+                        .font(.footnote)
+                } header: {
+                    Text("iPhoneに自動で保存しました")
+                } footer: {
+                    Text("「ファイル」アプリ → このiPhone内 → SHEET MASTER → DXF → 会社 → 素材 → 板厚 のフォルダに入っています。会社名が違っていたら直して「保存し直す」を押してください。")
+                }
+            }
             if !files.isEmpty {
                 Section("できたファイル") {
                     ForEach(files) { f in
@@ -80,6 +103,18 @@ struct ExportView: View {
                 })
             }
         }
+    }
+
+    private var companyBinding: Binding<String> {
+        Binding(
+            get: { store.drawings.first(where: { $0.id == drawingID })?.company ?? "" },
+            set: { v in
+                if let di = store.drawings.firstIndex(where: { $0.id == drawingID }) {
+                    store.drawings[di].company = v
+                    store.save()
+                }
+            }
+        )
     }
 
     private func make() {

@@ -54,11 +54,12 @@ struct HomeView: View {
 
             Section {
                 Button {
+                    guard !running else { return }
                     Task { await run() }
                 } label: {
                     HStack {
                         Spacer()
-                        if running { ProgressView().tint(.black) }
+                        if running { SpinningGear(size: 26) }
                         Text(running ? progressText : "読み取る").font(.title3.bold())
                         Spacer()
                     }
@@ -66,7 +67,8 @@ struct HomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .foregroundStyle(.black)
-                .disabled(images.isEmpty || running)
+                // v3.5: 読み取り中に無効にすると、ボタン全体が薄くなって歯車が止まって見えたので、無効にしない(二重押しは上で防ぐ)
+                .disabled(images.isEmpty && !running)
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
                 if let e = errorText {
@@ -156,5 +158,23 @@ struct StepHeader: View {
                 .background(Circle().fill(Color.yellow))
             Text(title).font(.title3.bold()).foregroundStyle(.yellow)
         }
+    }
+}
+
+/// v3.5: 読み取り中の歯車。色付きで、常に回り続ける(時計で角度を決めるので、画面の更新に左右されない)
+struct SpinningGear: View {
+    var size: CGFloat = 24
+    var color: Color = .red
+
+    var body: some View {
+        TimelineView(.animation) { tl in
+            let t = tl.date.timeIntervalSinceReferenceDate
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: size, weight: .bold))
+                .foregroundStyle(color)
+                .rotationEffect(.degrees((t * 240).truncatingRemainder(dividingBy: 360)))
+        }
+        .frame(width: size + 4, height: size + 4)
+        .accessibilityLabel("読み取り中")
     }
 }

@@ -89,6 +89,61 @@ enum Exporter {
         let title: String
         let quantity: Int
         let built: BuiltPart
+        /// v3.5: 「ファイル」アプリに保存した場所(DXF/会社/素材/板厚)。失敗したら nil
+        var savedFolder: String? = nil
+    }
+
+    // MARK: v3.5 「ファイル」アプリ(このiPhone内 > SHEET MASTER > DXF)への自動保存
+
+    static var dxfRoot: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("DXF", isDirectory: true)
+    }
+
+    /// 会社名(「株式会社」などを除いて短くする)
+    static func companyFolder(_ c: String?) -> String {
+        var s = (c ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        for w in ["株式会社", "(株)", "（株）", "㈱", "有限会社", "(有)", "（有）", "㈲"] {
+            s = s.replacingOccurrences(of: w, with: "")
+        }
+        s = safe(s.trimmingCharacters(in: .whitespacesAndNewlines))
+        return s.isEmpty ? "会社名未確定" : s
+    }
+
+    /// 素材(鉄・ステンレス・アルミ)+材質名。例: 「鉄(SPCC)」「ステンレス(SUS304)」
+    static func materialFolder(_ material: String) -> String {
+        let m = material.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !m.isEmpty else { return "材質未確定" }
+        let kind: String
+        switch materialGroup(m) {
+        case "SUS": kind = "ステンレス"
+        case "AL": kind = "アルミ"
+        default: kind = "鉄"
+        }
+        return safe("\(kind)(\(m))")
+    }
+
+    static func thicknessFolder(_ t: Double?) -> String {
+        guard let t else { return "板厚未確定" }
+        return "t" + Fmt.num(t)
+    }
+
+    /// 一時フォルダのファイルを DXF/会社/素材/板厚/ にコピーする(同じ名前は上書き)。保存した場所を返す
+    static func saveToFiles(_ src: URL, drawing: DrawingRecord, part: Part) -> String? {
+        let fm = FileManager.default
+        let comp = companyFolder(drawing.company), mat = materialFolder(part.material), th = thicknessFolder(part.thickness)
+        let dir = dxfRoot.appendingPathComponent(comp, isDirectory: true)
+            .appendingPathComponent(mat, isDirectory: true)
+            .appendingPathComponent(th, isDirectory: true)
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dst = dir.appendingPathComponent(src.lastPathComponent)
+            if fm.fileExists(atPath: dst.path) { try fm.removeItem(at: dst) }
+            try fm.copyItem(at: src, to: dst)
+            return "DXF/\(comp)/\(mat)/\(th)"
+        } catch {
+            return nil
+        }
     }
 
     /// DXFファイルを一時フォルダに書き出す。失敗した部品は理由を返す
@@ -115,7 +170,9 @@ enum Exporter {
                 let text = DXFWriter.dxf(built, includeBendLayer: settings.includeBendLayer)
                 if (try? text.data(using: .ascii, allowLossyConversion: true)?.write(to: url)) != nil {
                     let title = "\(it.part.partKey) \(it.part.name)" + (mir ? "(勝手違い)" : "")
-                    files.append(ExportedFile(url: url, title: title, quantity: it.part.quantity, built: built))
+                    var ef = ExportedFile(url: url, title: title, quantity: it.part.quantity, built: built)
+                    ef.savedFolder = saveToFiles(url, drawing: it.drawing, part: it.part)
+                    files.append(ef)
                 }
             }
         }

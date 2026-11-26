@@ -306,6 +306,8 @@ struct DrawingRecord: Codable, Hashable, Identifiable {
     var analysis: String = ""
     /// 段階AのAIの返答そのもの(原因調査用)
     var rawInventory: String? = nil
+    /// v3.5: 図面を出した会社(表題欄の会社名)。DXFの保存フォルダ名に使う
+    var company: String? = nil
 }
 
 // MARK: - 設定テーブル
@@ -328,7 +330,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "3.4"
+    static let version = "3.5"
 }
 
 enum Fmt {

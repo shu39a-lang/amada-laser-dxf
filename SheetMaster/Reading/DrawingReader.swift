@@ -149,6 +149,7 @@ struct DrawingReader {
         rec.analysis = J.str(o["analysis"])
         rec.drawingNumber = J.str(o["drawing_number"])
         rec.title = J.str(o["title"])
+        if !J.str(o["company"]).isEmpty { rec.company = J.str(o["company"]) }
         rec.productNumber = J.str(o["product_number"])
         rec.notes = J.strs(o["notes"])
         rec.questions = J.strs(o["questions"])

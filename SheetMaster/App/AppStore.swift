@@ -61,16 +61,35 @@ final class AppStore {
 
     private let fm = FileManager.default
     private var docs: URL { fm.urls(for: .documentDirectory, in: .userDomainMask)[0] }
-    private var drawingsURL: URL { docs.appendingPathComponent("drawings_v24.json") }
-    private var settingsURL: URL { docs.appendingPathComponent("settings_v24.json") }
+    /// v3.5: 「書類」フォルダは「ファイル」アプリに見えるようにしたので、アプリのデータは見えない場所へ移す
+    private var dataDir: URL {
+        let u = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SheetMasterData", isDirectory: true)
+        if !fm.fileExists(atPath: u.path) { try? fm.createDirectory(at: u, withIntermediateDirectories: true) }
+        return u
+    }
+    private var drawingsURL: URL { dataDir.appendingPathComponent("drawings_v24.json") }
+    private var settingsURL: URL { dataDir.appendingPathComponent("settings_v24.json") }
     var imagesDir: URL {
-        let u = docs.appendingPathComponent("images", isDirectory: true)
+        let u = dataDir.appendingPathComponent("images", isDirectory: true)
         if !fm.fileExists(atPath: u.path) { try? fm.createDirectory(at: u, withIntermediateDirectories: true) }
         return u
     }
 
     init() {
+        migrateFromDocuments()
         load()
+    }
+
+    /// v3.4以前は「書類」に保存していたデータを、見えない場所へ移す(1回だけ)
+    private func migrateFromDocuments() {
+        for name in ["drawings_v24.json", "settings_v24.json", "images"] {
+            let old = docs.appendingPathComponent(name)
+            let new = dataDir.appendingPathComponent(name)
+            if fm.fileExists(atPath: old.path) && !fm.fileExists(atPath: new.path) {
+                try? fm.moveItem(at: old, to: new)
+            }
+        }
     }
 
     func load() {
