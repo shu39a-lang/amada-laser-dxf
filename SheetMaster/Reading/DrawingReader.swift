@@ -215,6 +215,10 @@ struct DrawingReader {
             return r.isEmpty ? (b.blocking.isEmpty ? "外形が空でした" : nil) : r.joined(separator: " / ")
         }
         if b.width < 1 || b.height < 1 { return "外形の大きさが0でした" }
+        // v2.9: 部品一覧では曲げがあるのに、展開に曲げ線が1本も無い(フランジの読み落とし)
+        if part.bendsCount > 0 && b.bendLines.isEmpty {
+            return "部品一覧では曲げが\(part.bendsCount)か所あるのに、展開形状に曲げ線(フランジ)がありませんでした。二重線で描かれた辺・側面図の立ち上がりを確認し、フランジを含めた展開にしてください"
+        }
         return nil
     }
 
@@ -266,6 +270,7 @@ struct DrawingReader {
                                                     thinkingBudget: budget, onProgress: onProgress)
         }
         var f = Self.parseFlat(out)
+        Self.normalizePhotos(&f, images: images)
         f.rawJSON = J.pretty(out)
         return f
     }
@@ -312,6 +317,7 @@ struct DrawingReader {
                 return P2(x: x, y: y)
             }
             hole.note = J.str(h["note"])
+            parsePhoto(h, into: &hole)
             return hole
         }
         f.bends = J.arr(o["bends"]).compactMap { (b) -> Bend? in
@@ -338,6 +344,39 @@ struct DrawingReader {
 }
 
 extension DrawingReader {
+    /// v2.9: 穴の「写真上の位置」(全体画像のピクセル)をいったんそのまま入れる。割合への変換は normalizePhotos
+    static func parsePhoto(_ h: [String: Any], into hole: inout Hole) {
+        guard let p = J.obj(h["photo"]), let no = J.num(p["no"]),
+              let px = J.num(p["px"]), let py = J.num(p["py"]) else { return }
+        hole.photoNo = Int(no)
+        hole.photoX = px
+        hole.photoY = py
+    }
+
+    /// v2.9: ピクセル → 写真の幅・高さに対する割合(0〜1)。おかしな値は捨てる
+    static func normalizePhotos(_ f: inout FlatPattern, images: [PreparedImage]) {
+        var sizes: [Int: CGSize] = [:]
+        for im in images { if let sz = im.fullSize { sizes[im.photoNo] = sz } }
+        func fix(_ h: inout Hole) {
+            defer {
+                if h.photoX == nil || h.photoY == nil { h.photoNo = nil; h.photoX = nil; h.photoY = nil }
+            }
+            guard let no = h.photoNo, let x = h.photoX, let y = h.photoY,
+                  let sz = sizes[no], sz.width > 0, sz.height > 0 else { h.photoX = nil; return }
+            // すでに割合(0〜1)で返ってきた場合はそのまま
+            let u = (x <= 1 && y <= 1) ? x : x / Double(sz.width)
+            let v = (x <= 1 && y <= 1) ? y : y / Double(sz.height)
+            if u < 0 || u > 1 || v < 0 || v > 1 { h.photoX = nil; return }
+            h.photoX = u
+            h.photoY = v
+        }
+        for i in f.holes.indices { fix(&f.holes[i]) }
+        if var fm = f.faces {
+            for i in fm.features.indices where fm.features[i].kind == "hole" { fix(&fm.features[i].hole) }
+            f.faces = fm
+        }
+    }
+
     static func parseFaces(_ o: [String: Any]) -> FaceModel? {
         var m = FaceModel()
         m.baseName = J.str(o["base_name"]).isEmpty ? "基準面" : J.str(o["base_name"])
@@ -388,6 +427,7 @@ extension DrawingReader {
             hole.h = J.num(x["h"]) ?? 0
             hole.cornerR = J.num(x["corner_r"]) ?? 0
             hole.note = J.str(x["note"])
+            parsePhoto(x, into: &hole)
             ft.hole = hole
             feats.append(ft)
         }

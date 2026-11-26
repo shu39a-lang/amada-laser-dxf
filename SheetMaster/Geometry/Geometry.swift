@@ -12,6 +12,12 @@ struct HoleLabel: Hashable {
     var pos: P2
     var text: String
     var position: String
+    /// v2.9: 穴を囲む四角の大きさ(mm、穴の外形の幅・高さ)
+    var boxW: Double = 0
+    var boxH: Double = 0
+    /// v2.9: 写真の中の位置(何枚目、幅・高さに対する割合 0〜1)。無ければ nil
+    var photoNo: Int? = nil
+    var photo: P2? = nil
 }
 
 struct BuiltPart {
@@ -65,7 +71,8 @@ enum Geometry {
         if f.outline.count < 3 { out.blocking.append("外形の頂点が3つ未満です"); return out }
 
         // 1) 展開前のサイズ確認(AIの検算)
-        let pre = bbox(of: polygonPoints(f.outline))
+        //  v2.9: 円弧のふくらみも含めて測る(頂点だけで測ると長円の板の縦が短く出ていた)
+        let pre = outlineBBox(f.outline)
         for k in f.keyDimensions {
             let actual: Double? = k.axis == "x" ? pre.w : (k.axis == "y" ? pre.h : nil)
             if let a = actual, abs(a - k.value) > 0.6 {
@@ -96,7 +103,10 @@ enum Geometry {
         }
 
         // 3) 原点を左下に合わせる
-        let b = bbox(of: polygonPoints(f.outline))
+        //  v2.9: 頂点だけでなく円弧のふくらみも含めた範囲で合わせる。
+        //  v2.8までは頂点だけで測っていたため、円弧の端の部品(長円の板など)は
+        //  円弧が原点より下・はみ出した位置に描かれ、展開寸法(縦)も短く表示されていた(DXFも同じ)
+        let b = outlineBBox(f.outline)
         f = translate(f, dx: -b.minX, dy: -b.minY)
         if mirrored { f = mirror(f, width: b.w) }
 
@@ -123,7 +133,16 @@ enum Geometry {
             case .rect: t = "□" + Fmt.num(h.w) + "×" + Fmt.num(h.h)
             case .polygon: t = "異形"
             }
-            return HoleLabel(pos: c, text: t, position: "(\(Fmt.num(c.x)), \(Fmt.num(c.y)))")
+            var dummy: [String] = []
+            let hb = bbox(of: extremePoints(holeSegments(h, warnings: &dummy)))
+            var label = HoleLabel(pos: c, text: t, position: "(\(Fmt.num(c.x)), \(Fmt.num(c.y)))")
+            label.boxW = max(hb.w, 2)
+            label.boxH = max(hb.h, 2)
+            if let no = h.photoNo, let px = h.photoX, let py = h.photoY {
+                label.photoNo = no
+                label.photo = P2(x: px, y: py)
+            }
+            return label
         }
 
         // 4) 穴が外形の中にあるか
@@ -137,8 +156,47 @@ enum Geometry {
                 if dist(holeCenter(f.holes[i]), holeCenter(f.holes[j])) < 0.3 { out.warnings.append("穴\(i + 1)と穴\(j + 1)が重なっています") }
             }
         }
+        // v2.9: 部品一覧では曲げがあるのに、展開に曲げ線が無い
+        if part.bendsCount > 0 && out.bendLines.isEmpty {
+            out.warnings.append("部品一覧では曲げが\(part.bendsCount)か所ありますが、展開に曲げ線がありません。フランジが抜けていないか確認してください(「指示して読み直す」で読み直せます)")
+        }
         if !f.uncertain.isEmpty { out.warnings += f.uncertain.map { "AI確認事項: " + $0 } }
         return out
+    }
+
+    /// v2.9: 外形の範囲(円弧のふくらみ・角のRも含む)
+    static func outlineBBox(_ vs: [OutlineVertex]) -> BBox {
+        var dummy: [String] = []
+        let pts = extremePoints(polygonSegments(vs, warnings: &dummy))
+        return pts.isEmpty ? bbox(of: polygonPoints(vs)) : bbox(of: pts)
+    }
+
+    /// 線分の端点と、円弧の上下左右の一番外側の点(範囲をぴったり測るため)
+    static func extremePoints(_ segs: [Seg]) -> [P2] {
+        var pts: [P2] = []
+        for sg in segs {
+            switch sg {
+            case .line(let a, let b):
+                pts.append(a); pts.append(b)
+            case .arc(let c, let r, let s0, let e0):
+                var e = e0
+                while e <= s0 { e += 360 }
+                for a in [s0, e] {
+                    let t = a * .pi / 180
+                    pts.append(P2(x: c.x + r * cos(t), y: c.y + r * sin(t)))
+                }
+                // 始点〜終点(反時計回り)の間にある 0°・90°・180°・270°
+                var k = (s0 / 90).rounded(.up) * 90
+                while k < e {
+                    let t = k * .pi / 180
+                    pts.append(P2(x: c.x + r * cos(t), y: c.y + r * sin(t)))
+                    k += 90
+                }
+            case .circle(let c, let r):
+                pts += [P2(x: c.x - r, y: c.y - r), P2(x: c.x + r, y: c.y + r)]
+            }
+        }
+        return pts
     }
 
     // MARK: - 曲げ控除(外寸合算座標 → 展開座標)

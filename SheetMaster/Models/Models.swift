@@ -72,9 +72,15 @@ struct Hole: Codable, Hashable, Identifiable {
     // polygon
     var points: [P2] = []
     var note: String = ""
+    /// v2.9: 写真の中でこの穴が描かれている位置(見比べ画面用)。
+    ///  photoNo = 何枚目の写真か(1〜)、photoX / photoY = その写真の幅・高さに対する割合(0〜1、左上が原点)
+    ///  古いデータには無いので Optional
+    var photoNo: Int? = nil
+    var photoX: Double? = nil
+    var photoY: Double? = nil
 
     enum CodingKeys: String, CodingKey {
-        case type, cx, cy, d, x1, y1, x2, y2, width, w, h, angle, cornerR, points, note
+        case type, cx, cy, d, x1, y1, x2, y2, width, w, h, angle, cornerR, points, note, photoNo, photoX, photoY
     }
 }
 
@@ -277,7 +283,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "2.8"
+    static let version = "2.9"
 }
 
 enum Fmt {

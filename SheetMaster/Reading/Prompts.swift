@@ -158,6 +158,17 @@ report_inventory ツールで返す。最初に analysis に、どのビュー�
 report_flat_pattern ツールで返す。最初に analysis に、使ったビュー・寸法の拾い方・検算を書いてから座標を埋める。
 analysis は600字以内、uncertain は8件以内にまとめる(回答が長すぎると途中で切れて読み込めなくなるため)。
 outline・holes・bends・faces は配列・オブジェクトのまま返す(JSONの文字列にしない)。
+【写真上の位置(見比べ用・必須)】
+- アプリは「図面の写真」と「あなたの座標から作った形」を同じ縮尺で並べ、穴を四角で囲んで作業者に見比べてもらう。
+- そのため、すべての穴に photo を付ける: no=写真の番号(「写真1・全体」なら1)、px, py=その写真の「全体」画像の中で、その穴(丸・長穴なら中心)が描かれている位置のピクセル座標(左上が0,0、右・下が正)。全体画像の幅・高さはラベルに書いてある。
+- 拡大タイルの座標ではなく、必ず「全体」画像の座標で答える。穴を丸として描いているビュー(正面図・展開図)の位置を使う。
+- faces の holes も同じく photo を付ける。どの写真にも描かれていない穴だけ photo を省く。
+- 位置はできるだけ正確に(数ピクセル以内)。アプリは複数の穴の位置から写真の縮尺・傾きを計算するので、2つ以上の穴に付けること。
+
+【全体寸法の注意】
+- key_dimensions の全体横・縦は、円弧のふくらみ(端のR)まで含めた外寸にする。例: 円弧の中心どうし200、両端R50 → 縦 = 50 + 200 + 50 = 300。
+- 寸法が円弧の中心・穴の中心から測られているときは、その基準点の座標を先に決めてから他の点を置く。
+
 「φ7後M6ナット溶接」のように後でナットを溶接する穴は、タップ下穴ではなく書かれた径(φ7)で抜く。
 一部の範囲だけに付くタブ(例: 側板の上から100〜200の所だけに付く取付タブ)や、段の付いた側板がある部品は、faces で表せなければ outer_dims で書く。
 """
@@ -198,7 +209,9 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
       "a": {"type": "number"}, "d": {"type": "number"}, "dia": {"type": "number"},
       "a2": {"type": "number"}, "d2": {"type": "number"}, "width": {"type": "number"},
       "w": {"type": "number"}, "h": {"type": "number"}, "corner_r": {"type": "number"},
-      "note": {"type": "string"}
+      "note": {"type": "string"},
+      "photo": {"type": "object", "description": "写真の全体画像の中での穴の位置(ピクセル)", "properties": {
+        "no": {"type": "integer"}, "px": {"type": "number"}, "py": {"type": "number"}}, "required": ["no", "px", "py"]}
      }, "required": ["face", "type", "a", "d"]}},
     "notches": {"type": "array", "items": {"type": "object", "properties": {
       "face": {"type": "string"},
@@ -236,7 +249,9 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
      "x1": {"type": "number"}, "y1": {"type": "number"}, "x2": {"type": "number"}, "y2": {"type": "number"}, "width": {"type": "number"},
      "w": {"type": "number"}, "h": {"type": "number"}, "angle": {"type": "number"}, "corner_r": {"type": "number"},
      "points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}},
-     "note": {"type": "string"}
+     "note": {"type": "string"},
+     "photo": {"type": "object", "description": "写真の全体画像の中での穴の位置(ピクセル)", "properties": {
+       "no": {"type": "integer"}, "px": {"type": "number"}, "py": {"type": "number"}}, "required": ["no", "px", "py"]}
     },
     "required": ["type"]
    }

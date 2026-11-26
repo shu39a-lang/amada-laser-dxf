@@ -108,7 +108,8 @@ struct ResultView: View {
             }
             .sheet(item: $zooming) { ref in
                 if let p = d.parts.first(where: { $0.id == ref.id }) {
-                    FullPreviewView(title: p.name, built: Geometry.build(part: p, settings: store.settings))
+                    FullPreviewView(title: p.name, built: Geometry.build(part: p, settings: store.settings),
+                                    loadImages: { d.imageFiles.compactMap { store.loadImage($0) } })
                 }
             }
             .navigationDestination(isPresented: $showExport) {

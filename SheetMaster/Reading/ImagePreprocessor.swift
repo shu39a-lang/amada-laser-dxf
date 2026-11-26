@@ -9,6 +9,9 @@ import CoreImage.CIFilterBuiltins
 struct PreparedImage {
     let label: String
     let jpeg: Data
+    /// v2.9: 何枚目の写真か(1〜)。「全体」画像だけ fullSize(ピクセル)を持つ
+    var photoNo: Int = 0
+    var fullSize: CGSize? = nil
 }
 
 enum ImagePreprocessor {
@@ -23,14 +26,19 @@ enum ImagePreprocessor {
         for (pi, raw) in images.enumerated() {
             let img = normalized(raw)
             let photoNo = pi + 1
-            if let full = jpeg(resized(img, maxEdge: maxEdge), quality: 0.85) {
-                out.append(PreparedImage(label: "写真\(photoNo)・全体", jpeg: full))
+            let fullImg = resized(img, maxEdge: maxEdge)
+            if let full = jpeg(fullImg, quality: 0.85) {
+                // v2.9: 穴の位置を写真上のピクセルで答えてもらうため、全体画像の大きさを伝える
+                let pw = Int((fullImg.size.width * fullImg.scale).rounded())
+                let ph = Int((fullImg.size.height * fullImg.scale).rounded())
+                out.append(PreparedImage(label: "写真\(photoNo)・全体(幅\(pw)×高さ\(ph)ピクセル)", jpeg: full,
+                                         photoNo: photoNo, fullSize: CGSize(width: pw, height: ph)))
             }
             if images.count * (1 + effectiveGrid * effectiveGrid) > 20 { continue } // それでも多いときは全体のみ
             let enhanced = enhance(img) ?? img
             for t in tiles(enhanced, grid: effectiveGrid) {
                 if let d = jpeg(resized(t.image, maxEdge: maxEdge), quality: 0.85) {
-                    out.append(PreparedImage(label: "写真\(photoNo)・拡大\(t.name)", jpeg: d))
+                    out.append(PreparedImage(label: "写真\(photoNo)・拡大\(t.name)", jpeg: d, photoNo: photoNo))
                 }
             }
         }
