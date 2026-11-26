@@ -374,6 +374,11 @@ struct ComparePane: View {
     var onDragBox: ((CGRect) -> Void)? = nil
     @State private var dragStart: CGPoint?
     @State private var dragNow: CGPoint?
+    /// v3.4: 合わせる間の写真の拡大・移動(2本指で拡大、1本指で移動)。boxMode のときは1本指で四角を描く
+    var boxMode: Bool = false
+    var onViewChange: ((CGPoint, CGFloat) -> Void)? = nil
+    @State private var panStart: CGPoint?
+    @State private var zoomStart: CGFloat?
 
     var body: some View {
         GeometryReader { geo in
@@ -456,18 +461,42 @@ struct ComparePane: View {
             .gesture(
                 DragGesture(minimumDistance: 8)
                     .onChanged { v in
-                        dragStart = v.startLocation
-                        dragNow = v.location
+                        guard let img = image else { return }
+                        if boxMode && onDragBox != nil {
+                            dragStart = v.startLocation
+                            dragNow = v.location
+                        } else if let cb = onViewChange {
+                            // 1本指で写真を動かす
+                            let fit = PhotoFit(size: geo.size, image: img, focus: focus, zoom: focusZoom)
+                            let center = focus ?? CGPoint(x: img.size.width / 2, y: img.size.height / 2)
+                            if panStart == nil { panStart = center }
+                            let p0 = panStart ?? center
+                            let nx = min(max(p0.x - v.translation.width / fit.k, 0), img.size.width)
+                            let ny = min(max(p0.y - v.translation.height / fit.k, 0), img.size.height)
+                            cb(CGPoint(x: nx, y: ny), focusZoom)
+                        }
                     }
                     .onEnded { v in
+                        panStart = nil
                         defer { dragStart = nil; dragNow = nil }
-                        guard let cb = onDragBox, let img = image else { return }
+                        guard boxMode, let cb = onDragBox, let img = image else { return }
                         let fit = PhotoFit(size: geo.size, image: img, focus: focus, zoom: focusZoom)
                         let a = fit.toPixel(v.startLocation), b = fit.toPixel(v.location)
                         let r = CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
                         if r.width > 8 || r.height > 8 { cb(r) }
                     },
-                including: (onDragBox != nil && kind == .photo && align == nil) ? .all : .none
+                including: (kind == .photo && align == nil && (onDragBox != nil || onViewChange != nil)) ? .all : .none
+            )
+            .simultaneousGesture(
+                MagnifyGesture()
+                    .onChanged { v in
+                        guard let cb = onViewChange, let img = image else { return }
+                        if zoomStart == nil { zoomStart = focusZoom }
+                        let z = min(max((zoomStart ?? 1) * v.magnification, 1), 25)
+                        cb(focus ?? CGPoint(x: img.size.width / 2, y: img.size.height / 2), z)
+                    }
+                    .onEnded { _ in zoomStart = nil },
+                including: (kind == .photo && align == nil && onViewChange != nil) ? .all : .none
             )
             .onTapGesture { loc in
                 guard let cb = onTapPhoto, kind == .photo, align == nil, let img = image else { return }
@@ -511,6 +540,7 @@ struct CompareView: View {
     @State private var focusZoom: CGFloat = 1
     @State private var tapped: [CGPoint] = []
     @State private var locating = false
+    @State private var boxMode = false
     @State private var locateError: String?
 
     /// これ以上ずれていたら知らせる(mm)
@@ -573,6 +603,17 @@ struct CompareView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if overlay && align != nil {
                     pane(.overlay)
+                } else if step != .none {
+                    // v3.4: 合わせる間は写真を大きく。データは右上に小さく(A・Bの位置の確認用)
+                    ZStack(alignment: .topTrailing) {
+                        pane(.photo)
+                        pane(.data)
+                            .frame(width: 130, height: 130)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange, lineWidth: 1))
+                            .padding(8)
+                            .allowsHitTesting(false)
+                    }
+                    .padding(.horizontal, 4)
                 } else {
                     HStack(spacing: 4) {
                         VStack(spacing: 2) {
@@ -651,6 +692,7 @@ struct CompareView: View {
         focusZoom = 1
         tapped = []
         locateError = nil
+        boxMode = false
         step = .choose
         resetZoom()
     }
@@ -711,13 +753,8 @@ struct CompareView: View {
     private func handleTap(_ px: CGPoint) {
         switch step {
         case .choose:
-            locateByTap(px)
-        case .fineArea:
-            // 1回目: タップした所を中心に拡大
-            focus = px
-            focusZoom = 3
-            step = .pointA
-        case .pointA:
+            if !boxMode { locateByTap(px) }
+        case .fineArea, .pointA:
             tapped = [px]
             step = .pointB
         case .pointB:
@@ -740,29 +777,26 @@ struct CompareView: View {
         VStack(spacing: 6) {
             switch step {
             case .choose:
-                guideText("左の写真で、この部品の所をタップしてください(AIが探して自動で合わせます)。または、部品の形を指でなぞって四角で囲んでください(すぐ合います)")
+                guideText(boxMode
+                          ? "部品の形を指でなぞって四角で囲んでください(すぐ合います)"
+                          : "写真の中の部品の所をタップしてください(AIが探して自動で合わせます)")
                 if let e = locateError {
                     Text(e).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center).padding(.horizontal)
                 }
-                Button("A・Bの2点で細かく合わせる") { focus = nil; focusZoom = 1; tapped = []; step = .fineArea }
-                    .font(.caption).buttonStyle(.bordered)
-            case .fineArea:
-                guideText("① 左の写真で、この部品が描かれている所をタップしてください(その所を拡大します)")
+                zoomBar
+                HStack {
+                    Toggle("四角で囲む", isOn: $boxMode).toggleStyle(.button)
+                    Button("A・Bの2点で合わせる") { tapped = []; boxMode = false; step = .pointA }
+                }
+                .font(.caption).buttonStyle(.bordered)
+            case .fineArea, .pointA:
+                guideText("右上のデータの「A」の角と同じ所を、写真を拡大してタップしてください")
+                zoomBar
                 Button("簡単な合わせ方に戻る") { startAlign() }.font(.caption).buttonStyle(.bordered)
-            case .pointA:
-                guideText("② 右のデータの「A」の角と同じ所を、左の写真でタップしてください")
-                HStack {
-                    Button("拡大をやり直す") { focus = nil; focusZoom = 1; tapped = []; step = .fineArea }
-                    Button("もっと拡大") { focusZoom = min(focusZoom * 1.6, 12) }
-                }
-                .font(.caption).buttonStyle(.bordered)
             case .pointB:
-                guideText("③ 次に「B」の角と同じ所を、左の写真でタップしてください")
-                HStack {
-                    Button("Aからやり直す") { tapped = []; step = .pointA }
-                    Button("もっと拡大") { focusZoom = min(focusZoom * 1.6, 12) }
-                }
-                .font(.caption).buttonStyle(.bordered)
+                guideText("次に「B」の角と同じ所をタップしてください")
+                zoomBar
+                Button("Aからやり直す") { tapped = []; step = .pointA }.font(.caption).buttonStyle(.bordered)
             case .none:
                 if let al = align {
                     Text(statusText(al)).font(.caption).foregroundStyle(.secondary)
@@ -785,6 +819,19 @@ struct CompareView: View {
         }
     }
 
+    /// v3.4: 写真の拡大・縮小(2本指でも拡大、1本指で移動できる)
+    private var zoomBar: some View {
+        HStack(spacing: 10) {
+            Text("2本指で拡大・1本指で移動").font(.caption2).foregroundStyle(.secondary)
+            Button { focusZoom = max(focusZoom / 1.6, 1) } label: { Image(systemName: "minus.magnifyingglass") }
+            Button { focusZoom = min(focusZoom * 1.6, 25) } label: { Image(systemName: "plus.magnifyingglass") }
+            Button("全体") { focus = nil; focusZoom = 1 }
+            Text("×\(Fmt.num((Double(focusZoom) * 10).rounded() / 10))").font(.caption2.monospacedDigit())
+        }
+        .font(.caption)
+        .buttonStyle(.bordered)
+    }
+
     private func guideText(_ t: String) -> some View {
         Text(t).font(.subheadline.bold()).foregroundStyle(.orange)
             .multilineTextAlignment(.center).padding(.horizontal)
@@ -800,7 +847,9 @@ struct CompareView: View {
                            activePick: step == .pointA ? 0 : (step == .pointB ? 1 : nil),
                            tapped: tapped,
                            onTapPhoto: aligning ? { handleTap($0) } : nil,
-                           onDragBox: (aligning && step == .choose) ? { alignToBox($0) } : nil)
+                           onDragBox: (aligning && step == .choose) ? { alignToBox($0) } : nil,
+                           boxMode: boxMode && step == .choose,
+                           onViewChange: aligning ? { f, z in focus = f; focusZoom = z } : nil)
             .scaleEffect(scale)
             .offset(offset)
             .clipped()
