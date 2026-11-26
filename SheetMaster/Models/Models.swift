@@ -128,6 +128,9 @@ enum DevelopMode: String, Codable {
     case outerDims
     /// 曲げあり。基準面+フランジの外寸だけを受け取り、展開座標はアプリが計算する(v2.6〜)
     case faces
+    /// 曲げあり。前板(段付き・L字など、辺が縦横だけの多角形)+辺ごとの側壁。
+    ///  内角で重なる側壁の切り分け・逃げ・角の切り欠きはアプリが計算する(v3.3〜)
+    case plateWalls
 }
 
 // MARK: - 面モデル(曲げ部品)
@@ -191,6 +194,38 @@ struct FaceModel: Codable, Hashable {
     var features: [FaceFeature] = []
 }
 
+// MARK: - 前板+側壁モデル(v3.3)
+
+/// 前板の辺に付く側壁
+struct PlateWall: Codable, Hashable {
+    /// 辺の番号(0〜。頂点 edge → 頂点 edge+1)
+    var edge: Int
+    /// 側壁の奥行(外寸)
+    var depth: Double
+    var angleDeg: Double = 90
+    var up: Bool = false
+}
+
+/// 側壁の上の穴
+struct PlateWallHole: Codable, Hashable {
+    var edge: Int
+    /// 辺に沿った位置(前板と同じ座標。横の辺ならX、縦の辺ならY)
+    var along: Double
+    /// 側壁の先端(前板から遠い方の縁)からの距離
+    var fromFree: Double
+    /// 丸穴(径 d、要確認 check、写真の位置 photo… をそのまま使う)
+    var hole: Hole
+}
+
+struct PlateModel: Codable, Hashable {
+    /// 前板の外形(外寸、反時計回り。辺は縦か横だけ)
+    var outline: [P2] = []
+    var walls: [PlateWall] = []
+    /// 前板の穴(前板の外寸の座標)
+    var holes: [Hole] = []
+    var wallHoles: [PlateWallHole] = []
+}
+
 struct FlatPattern: Codable, Hashable {
     var developedBy: DevelopMode = .flat
     var outline: [OutlineVertex] = []
@@ -204,6 +239,8 @@ struct FlatPattern: Codable, Hashable {
     var rawJSON: String? = nil
     /// 曲げ部品の面モデル(developedBy == .faces のとき)
     var faces: FaceModel? = nil
+    /// v3.3: 前板+側壁モデル(developedBy == .plateWalls のとき)
+    var plate: PlateModel? = nil
 }
 
 enum PartProcess: String, Codable, CaseIterable, Identifiable {
@@ -291,7 +328,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "3.2"
+    static let version = "3.3"
 }
 
 enum Fmt {

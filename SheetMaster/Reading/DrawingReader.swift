@@ -102,6 +102,10 @@ struct DrawingReader {
             case nil: break
             }
         }
+        // v3.3: 内角で重なる側壁を別部品(帯板)として足す
+        for id in rec.parts.filter({ $0.flat?.plate != nil }).map(\.id) {
+            Self.syncStrips(in: &rec, parentID: id)
+        }
         rec.appVersion = AppInfo.version
         return rec
     }
@@ -195,6 +199,7 @@ struct DrawingReader {
         let note = """
         前回の回答では展開形状を作れませんでした(理由: \(reason))。
         ・基準面に円弧の端・長円・斜めカットがあり、一部の辺にだけフランジがある部品は developed_by="outer_dims" で、outline(円弧は arc_to_next)と bends(start/end付き)を書く。
+        ・段付き・L字・凹形の前板の辺に側壁がある箱形は developed_by="plate_walls" で、plate.outline(前板の外寸)と plate.walls を書く。
         ・曲げの無い板(帯板を含む)は developed_by="flat" で outline を3点以上書く。
         ・faces を使う場合は width・height・flanges を必ず入れる。
         """
@@ -287,6 +292,7 @@ struct DrawingReader {
         switch J.str(o["developed_by"]) {
         case "faces": f.developedBy = .faces
         case "outer_dims": f.developedBy = .outerDims
+        case "plate_walls": f.developedBy = .plateWalls
         default: f.developedBy = .flat
         }
         if let fo = J.obj(o["faces"]) {
@@ -294,6 +300,8 @@ struct DrawingReader {
             if f.developedBy != .faces, f.faces != nil, J.arr(o["outline"]).count < 3 { f.developedBy = .faces }
         }
         if f.developedBy == .faces && f.faces == nil { f.developedBy = .flat }
+        if let po = J.obj(o["plate"]) { f.plate = parsePlate(po) }
+        if f.developedBy == .plateWalls && f.plate == nil { f.developedBy = .flat }
         f.outline = J.arr(o["outline"]).compactMap { (v) -> OutlineVertex? in
             guard let x = J.num(v["x"]), let y = J.num(v["y"]) else { return nil }
             var ov = OutlineVertex(x: x, y: y)
@@ -352,6 +360,112 @@ struct DrawingReader {
 }
 
 extension DrawingReader {
+    /// v3.3: 前板+側壁モデル
+    static func parsePlate(_ o: [String: Any]) -> PlateModel? {
+        var m = PlateModel()
+        m.outline = J.arr(o["outline"]).compactMap { v -> P2? in
+            guard let x = J.num(v["x"]), let y = J.num(v["y"]) else { return nil }
+            return P2(x: x, y: y)
+        }
+        if m.outline.count > 2, let a = m.outline.first, let b = m.outline.last,
+           abs(a.x - b.x) < 0.001, abs(a.y - b.y) < 0.001 { m.outline.removeLast() }
+        let n = m.outline.count
+        guard n >= 3 else { return nil }
+        /// 辺の番号は1から(頂点N → 頂点N+1)
+        func edgeIndex(_ a: Any?) -> Int? {
+            guard let v = J.num(a) else { return nil }
+            let i = Int(v.rounded()) - 1
+            return i >= 0 && i < n ? i : nil
+        }
+        for w in J.arr(o["walls"]) {
+            guard let depth = J.num(w["depth"]), depth > 0 else { continue }
+            let angle = J.num(w["angle_deg"]) ?? 90
+            let up = J.str(w["direction"]) == "up"
+            var edges: [Int] = []
+            if J.str(w["edge"]).lowercased() == "all" || (w["all_edges"] as? Bool) == true {
+                edges = Array(0..<n)
+            } else if let i = edgeIndex(w["edge"]) {
+                edges = [i]
+            }
+            for i in edges where !m.walls.contains(where: { $0.edge == i }) {
+                m.walls.append(PlateWall(edge: i, depth: depth, angleDeg: angle, up: up))
+            }
+        }
+        for h in J.arr(o["holes"]) {
+            guard let t = HoleType(rawValue: J.str(h["type"])) else { continue }
+            var hole = Hole(type: t)
+            hole.cx = J.num(h["cx"]) ?? 0; hole.cy = J.num(h["cy"]) ?? 0; hole.d = J.num(h["d"]) ?? 0
+            hole.x1 = J.num(h["x1"]) ?? 0; hole.y1 = J.num(h["y1"]) ?? 0
+            hole.x2 = J.num(h["x2"]) ?? 0; hole.y2 = J.num(h["y2"]) ?? 0
+            hole.width = J.num(h["width"]) ?? 0
+            hole.w = J.num(h["w"]) ?? 0; hole.h = J.num(h["h"]) ?? 0
+            hole.angle = J.num(h["angle"]) ?? 0; hole.cornerR = J.num(h["corner_r"]) ?? 0
+            hole.note = J.str(h["note"])
+            hole.check = J.str(h["check"]).isEmpty ? nil : J.str(h["check"])
+            parsePhoto(h, into: &hole)
+            m.holes.append(hole)
+        }
+        for h in J.arr(o["wall_holes"]) {
+            guard let i = edgeIndex(h["edge"]), let along = J.num(h["along"]),
+                  let from = J.num(h["from_free"]), let dia = J.num(h["dia"]), dia > 0 else { continue }
+            var hole = Hole(type: .circle)
+            hole.d = dia
+            hole.note = J.str(h["note"])
+            hole.check = J.str(h["check"]).isEmpty ? nil : J.str(h["check"])
+            parsePhoto(h, into: &hole)
+            m.wallHoles.append(PlateWallHole(edge: i, along: along, fromFree: from, hole: hole))
+        }
+        return m
+    }
+
+    /// v3.3: 本体(前板+側壁)から外した側壁を、別部品(帯板)として図面に足す/更新する。
+    ///  部品キーは「親のキー-W1」「-W2」…。読み直すたびに作り直す
+    static func syncStrips(in rec: inout DrawingRecord, parentID: UUID) {
+        guard let parent = rec.parts.first(where: { $0.id == parentID }) else { return }
+        let prefix = parent.partKey + "-W"
+        let strips = parent.flat?.plate.map { PlateBuilder.strips($0) } ?? []
+        // 前回の帯板で、今回は無くなったものを消す
+        rec.parts.removeAll { p in
+            guard p.partKey.hasPrefix(prefix), let k = Int(p.partKey.dropFirst(prefix.count)) else { return false }
+            return k > strips.count
+        }
+        for (k, s) in strips.enumerated() {
+            let key = prefix + "\(k + 1)"
+            var f = FlatPattern()
+            f.developedBy = .flat
+            let note = "溶接で付ける側壁。突き当てか重ねかで、長さ・幅が板厚分変わります"
+            f.outline = [OutlineVertex(x: 0, y: 0), OutlineVertex(x: s.length, y: 0),
+                         OutlineVertex(x: s.length, y: s.depth, check: note), OutlineVertex(x: 0, y: s.depth)]
+            f.holes = s.holes
+            f.analysis = "\(parent.name)の辺\(s.edge + 1)の側壁(長さ\(Fmt.num(s.length))×奥行\(Fmt.num(s.depth)))。内角で隣の側壁と重なるため、本体から分けた帯板"
+            f.confidence = 0.6
+            if let i = rec.parts.firstIndex(where: { $0.partKey == key }) {
+                rec.parts[i].flat = f
+                rec.parts[i].readError = nil
+                rec.parts[i].material = parent.material
+                rec.parts[i].thickness = parent.thickness
+                rec.parts[i].quantity = parent.quantity
+            } else {
+                var p = Part()
+                p.partKey = key
+                p.name = "内角の側壁\(k + 1)(\(parent.partKey)から分割・長さ\(Fmt.num(s.length)))"
+                p.material = parent.material
+                p.thickness = parent.thickness
+                p.thicknessSource = parent.thicknessSource
+                p.thicknessEvidence = "本体と同じ"
+                p.process = .laser
+                p.include = true
+                p.quantity = parent.quantity
+                p.mirrorPair = parent.mirrorPair
+                p.addedBy = "ai"
+                p.flat = f
+                // 本体のすぐ後ろに並べる
+                let last = rec.parts.lastIndex(where: { $0.id == parent.id || $0.partKey.hasPrefix(prefix) }) ?? (rec.parts.count - 1)
+                rec.parts.insert(p, at: min(last + 1, rec.parts.count))
+            }
+        }
+    }
+
     /// v2.9: 穴の「写真上の位置」(全体画像のピクセル)をいったんそのまま入れる。割合への変換は normalizePhotos
     static func parsePhoto(_ h: [String: Any], into hole: inout Hole) {
         guard let p = J.obj(h["photo"]), let no = J.num(p["no"]),
@@ -382,6 +496,11 @@ extension DrawingReader {
         if var fm = f.faces {
             for i in fm.features.indices where fm.features[i].kind == "hole" { fix(&fm.features[i].hole) }
             f.faces = fm
+        }
+        if var pm = f.plate {
+            for i in pm.holes.indices { fix(&pm.holes[i]) }
+            for i in pm.wallHoles.indices { fix(&pm.wallHoles[i].hole) }
+            f.plate = pm
         }
     }
 

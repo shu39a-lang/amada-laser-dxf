@@ -45,6 +45,11 @@ struct PartEditSheet: View {
                             get: { flat.wrappedValue.faces ?? FaceModel() },
                             set: { flat.wrappedValue.faces = $0 }
                         ))
+                    } else if flat.wrappedValue.developedBy == .plateWalls, flat.wrappedValue.plate != nil {
+                        PlateEditor(plate: Binding<PlateModel>(
+                            get: { flat.wrappedValue.plate ?? PlateModel() },
+                            set: { flat.wrappedValue.plate = $0 }
+                        ))
                     } else {
                     Section("穴(\(flat.wrappedValue.holes.count)個)") {
                         ForEach(flat.holes) { $hole in
@@ -70,7 +75,7 @@ struct PartEditSheet: View {
                         }
                     }
                     }
-                    if flat.wrappedValue.developedBy != .faces {
+                    if flat.wrappedValue.developedBy != .faces && flat.wrappedValue.developedBy != .plateWalls {
                     Section {
                         DisclosureGroup("外形の頂点(上級者向け)") {
                             ForEach(flat.outline) { $v in
@@ -112,7 +117,12 @@ struct PartEditSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("完了") { store.save(); dismiss() }.bold()
+                        Button("完了") {
+                            // v3.3: 側壁を直したら、分けた帯板も作り直す
+                            if part.flat?.plate != nil { DrawingReader.syncStrips(in: &store.drawings[di], parentID: partID) }
+                            store.save()
+                            dismiss()
+                        }.bold()
                     }
                 }
             } else {
@@ -221,6 +231,8 @@ struct RereadSheet: View {
                let pi2 = store.drawings[di2].parts.firstIndex(where: { $0.id == partID }) {
                 store.drawings[di2].parts[pi2].flat = f
                 store.drawings[di2].parts[pi2].readError = nil
+                let pid = store.drawings[di2].parts[pi2].id
+                DrawingReader.syncStrips(in: &store.drawings[di2], parentID: pid)
                 store.save()
             }
             dismiss()
@@ -414,6 +426,8 @@ struct AddPartSheet: View {
                let pi2 = store.drawings[di2].parts.firstIndex(where: { $0.id == p.id }) {
                 store.drawings[di2].parts[pi2].flat = f
                 store.drawings[di2].parts[pi2].readError = nil
+                let pid = store.drawings[di2].parts[pi2].id
+                DrawingReader.syncStrips(in: &store.drawings[di2], parentID: pid)
                 store.save()
             }
             dismiss()
@@ -424,6 +438,62 @@ struct AddPartSheet: View {
                 store.save()
             }
             errorText = error.localizedDescription + "(部品は追加済みです。カードの「指示して読み直す」でやり直せます)"
+        }
+    }
+}
+
+/// v3.3: 前板+側壁の数値を直す
+struct PlateEditor: View {
+    @Binding var plate: PlateModel
+
+    private func edgeLabel(_ i: Int) -> String {
+        let n = plate.outline.count
+        guard n > 0, i < n else { return "辺\(i + 1)" }
+        let a = plate.outline[i], b = plate.outline[(i + 1) % n]
+        let len = hypot(b.x - a.x, b.y - a.y)
+        return "辺\(i + 1)(長さ\(Fmt.num(len)))"
+    }
+
+    var body: some View {
+        Section {
+            ForEach($plate.walls, id: \.edge) { $w in
+                HStack {
+                    Text(edgeLabel(w.edge)).font(.caption.bold())
+                    NumField(label: "奥行", value: $w.depth)
+                }
+            }
+            .onDelete { plate.walls.remove(atOffsets: $0) }
+        } header: {
+            Text("側壁(奥行は外寸)")
+        } footer: {
+            Text("内角で重なる側壁は、自動で別部品(帯板)になります。完了を押すと帯板も作り直します。")
+        }
+        Section("前板の穴(\(plate.holes.count)個)") {
+            ForEach($plate.holes) { $hole in
+                HoleEditor(index: (plate.holes.firstIndex { $0.id == hole.id } ?? 0) + 1, hole: $hole)
+            }
+            .onDelete { plate.holes.remove(atOffsets: $0) }
+            Button("丸穴を追加") { plate.holes.append(Hole(type: .circle, d: 10)) }
+        }
+        Section {
+            ForEach(plate.wallHoles.indices, id: \.self) { i in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("側壁の穴 \(edgeLabel(plate.wallHoles[i].edge))").font(.caption.bold()).foregroundStyle(.red)
+                    HStack {
+                        NumField(label: "位置", value: $plate.wallHoles[i].along)
+                        NumField(label: "先端から", value: $plate.wallHoles[i].fromFree)
+                        NumField(label: "φ", value: $plate.wallHoles[i].hole.d)
+                    }
+                    if let c = plate.wallHoles[i].hole.check {
+                        Text("要確認: " + c).font(.caption2).foregroundStyle(.orange)
+                    }
+                }
+            }
+            .onDelete { plate.wallHoles.remove(atOffsets: $0) }
+        } header: {
+            Text("側壁の穴(\(plate.wallHoles.count)個)")
+        } footer: {
+            Text("位置 = 辺に沿った位置(前板と同じ座標)、先端から = 側壁の先端(前板から遠い縁)からの距離。")
         }
     }
 }

@@ -56,6 +56,26 @@ enum Geometry {
         }
         if part.thickness == nil { out.blocking.append("板厚が未確定です") }
 
+        // v3.3: 前板+側壁 → 平らな外形に直してから、下の共通処理へ
+        if f.developedBy == .plateWalls {
+            guard let pm = f.plate else { out.blocking.append("前板と側壁のデータがありません"); return out }
+            guard let t = part.thickness else { return out }
+            guard let row = settings.deduction(material: part.material, thickness: t) else {
+                out.blocking.append("控除表に \(materialGroup(part.material)) t\(Fmt.num(t)) がありません(設定で追加してください)")
+                return out
+            }
+            if row.provisional { out.warnings.append("控除値が仮値です(\(row.materialGroup) t\(Fmt.num(t)) = \(Fmt.num(row.value90))mm)。設定で会社の表に直してください") }
+            var w: [String] = []
+            let r = PlateBuilder.flatten(pm, thickness: t, deduction90: row.value90, warnings: &w)
+            out.warnings += w
+            f.outline = r.outline
+            f.holes = r.holes
+            f.bends = r.bends
+            f.keyDimensions = []        // 外寸の合計は展開後の大きさと違うので照合しない
+            f.developedBy = .flat
+            if f.outline.count < 3 { out.blocking.append("前板と側壁から外形を作れませんでした"); return out }
+        }
+
         if f.developedBy == .faces {
             // 面モデル → 展開(v2.6)。控除・角の逃げ・切欠きはすべてアプリ側で計算する
             guard let fm = f.faces else { out.blocking.append("曲げ部品の面データがありません"); return out }
@@ -907,5 +927,214 @@ enum FaceBuilder {
         let outerCount = loops.filter { area($0) > 0.01 }.count
         if outerCount > 1 { warnings.append("展開形状が\(outerCount)つに分かれています(面のつながりを確認してください)") }
         return best
+    }
+}
+
+// MARK: - 前板+側壁 → 展開形状  v3.3
+//
+// 考え方(前板の外寸の座標をそのまま使う。原点合わせは Geometry.build が行う):
+//  ・側壁のある辺は、曲げ線が外形から「控除値の半分」内側に入る。側壁の展開長 = 奥行(外寸) − 控除値の半分
+//  ・前板(曲げ線で囲まれた多角形)と側壁(長方形)の和集合が外形。凸の角では側壁どうしの間が自動で切り欠きになる
+//  ・内角(へこんだ角)をはさむ2つの側壁は展開図の上で重なり、1枚板では作れない。
+//    短い方の辺の側壁を本体から外し、別部品(帯板・溶接)にする
+//  ・残した側壁が内角で前板の辺に接する所は、逃げ(幅 relief)を空けて切り離す
+
+enum PlateBuilder {
+    static let relief = 1.0
+
+    struct Strip: Hashable {
+        var edge: Int
+        var length: Double
+        var depth: Double
+        var holes: [Hole]
+    }
+
+    struct Result {
+        var outline: [OutlineVertex] = []
+        var holes: [Hole] = []
+        var bends: [Bend] = []
+        /// 本体から外した側壁(別部品にする)
+        var strips: [Strip] = []
+    }
+
+    /// 反時計回りにそろえる(辺の番号も付け直す)
+    static func normalized(_ pm: PlateModel) -> PlateModel {
+        let pts = pm.outline
+        let n = pts.count
+        guard n >= 3 else { return pm }
+        var area = 0.0
+        for k in 0..<n { let a = pts[k], b = pts[(k + 1) % n]; area += a.x * b.y - b.x * a.y }
+        guard area < 0 else { return pm }
+        var m = pm
+        m.outline = Array(pts.reversed())
+        // 元の辺 i(頂点 i → i+1)は、逆順では 辺 n−2−i
+        func remap(_ i: Int) -> Int { ((n - 2 - i) % n + n) % n }
+        m.walls = pm.walls.map { var w = $0; w.edge = remap($0.edge); return w }
+        m.wallHoles = pm.wallHoles.map { var h = $0; h.edge = remap($0.edge); return h }
+        return m
+    }
+
+    static func isConcave(_ pts: [P2], _ k: Int) -> Bool {
+        let n = pts.count
+        let a = pts[(k - 1 + n) % n], b = pts[k], c = pts[(k + 1) % n]
+        return Geometry.cross(Geometry.sub(b, a), Geometry.sub(c, b)) < -1e-9
+    }
+
+    /// 本体に残す側壁と、外す側壁(内角で重なる短い方)
+    static func plan(_ pm: PlateModel) -> (kept: [Int: PlateWall], removed: [Int: PlateWall]) {
+        let pts = pm.outline
+        let n = pts.count
+        var kept: [Int: PlateWall] = [:]
+        for w in pm.walls where w.edge >= 0 && w.edge < n && w.depth > 0 { kept[w.edge] = w }
+        var removed: [Int: PlateWall] = [:]
+        guard n >= 3 else { return (kept, removed) }
+        func len(_ i: Int) -> Double { Geometry.dist(pts[i], pts[(i + 1) % n]) }
+        for k in 0..<n where isConcave(pts, k) {
+            let e0 = (k - 1 + n) % n, e1 = k
+            guard let w0 = kept[e0], let w1 = kept[e1] else { continue }
+            let drop = len(e0) < len(e1) - 1e-9 ? e0 : e1
+            removed[drop] = drop == e0 ? w0 : w1
+            kept[drop] = nil
+        }
+        return (kept, removed)
+    }
+
+    /// 本体から外す側壁の帯板(長さ = 辺の外寸、幅 = 奥行の外寸、穴は先端から測る)
+    static func strips(_ pm0: PlateModel) -> [Strip] {
+        let pm = normalized(pm0)
+        let pts = pm.outline
+        let n = pts.count
+        guard n >= 3 else { return [] }
+        let (_, removed) = plan(pm)
+        return removed.keys.sorted().compactMap { i -> Strip? in
+            guard let w = removed[i] else { return nil }
+            let a = pts[i], b = pts[(i + 1) % n]
+            let horizontal = abs(a.y - b.y) < 0.01
+            let lo = horizontal ? min(a.x, b.x) : min(a.y, b.y)
+            var holes: [Hole] = []
+            for wh in pm.wallHoles where wh.edge == i {
+                var h = wh.hole
+                h.type = .circle
+                h.cx = wh.along - lo
+                h.cy = wh.fromFree
+                holes.append(h)
+            }
+            return Strip(edge: i, length: Geometry.dist(a, b), depth: w.depth, holes: holes)
+        }
+    }
+
+    static func flatten(_ pm0: PlateModel, thickness t: Double, deduction90: Double, warnings: inout [String]) -> Result {
+        var res = Result()
+        let pm = normalized(pm0)
+        let pts = pm.outline
+        let n = pts.count
+        guard n >= 3 else { warnings.append("前板の外形の頂点が3つ未満です"); return res }
+        for i in 0..<n {
+            let a = pts[i], b = pts[(i + 1) % n]
+            if abs(a.x - b.x) > 0.01 && abs(a.y - b.y) > 0.01 {
+                warnings.append("前板の辺\(i + 1)が斜めです(前板+側壁の計算は縦横の辺だけ対応)。「指示して読み直す」で外寸並べ(outer_dims)にしてください")
+                return res
+            }
+        }
+        let (kept, removed) = plan(pm)
+        res.strips = strips(pm)
+        for i in removed.keys.sorted() {
+            warnings.append("辺\(i + 1)の側壁(長さ\(Fmt.num(Geometry.dist(pts[i], pts[(i + 1) % n]))))は内角で隣の側壁と重なるため、別部品(溶接)にしました")
+        }
+
+        func ded(_ w: PlateWall) -> Double { deduction90 * (w.angleDeg <= 0 ? 90 : w.angleDeg) / 90 }
+        func horizontal(_ i: Int) -> Bool { abs(pts[i].y - pts[(i + 1) % n].y) < 0.01 }
+        func dir(_ i: Int) -> P2 { Geometry.norm(Geometry.sub(pts[(i + 1) % n], pts[i])) }
+        func inward(_ i: Int) -> P2 { let u = dir(i); return P2(x: -u.y, y: u.x) }
+        /// 曲げ線(側壁が無い辺は外形のまま)の位置。横の辺ならY、縦の辺ならX
+        func line(_ i: Int) -> Double {
+            let o = kept[i].map { ded($0) / 2 } ?? 0
+            let nn = inward(i)
+            return horizontal(i) ? pts[i].y + nn.y * o : pts[i].x + nn.x * o
+        }
+
+        // 1) 前板(曲げ線で囲まれた多角形)
+        var q: [P2] = []
+        for k in 0..<n {
+            let e0 = (k - 1 + n) % n, e1 = k
+            if horizontal(e0) != horizontal(e1) {
+                q.append(horizontal(e1) ? P2(x: line(e0), y: line(e1)) : P2(x: line(e1), y: line(e0)))
+            } else {
+                // 一直線上の頂点
+                q.append(horizontal(e1) ? P2(x: pts[k].x, y: line(e1)) : P2(x: line(e1), y: pts[k].y))
+            }
+        }
+        var inc: [FaceBuilder.Rect] = []
+        let xs = Array(Set(q.map { ($0.x * 10000).rounded() / 10000 })).sorted()
+        let ys = Array(Set(q.map { ($0.y * 10000).rounded() / 10000 })).sorted()
+        if xs.count >= 2 && ys.count >= 2 {
+            for i in 0..<(xs.count - 1) {
+                for j in 0..<(ys.count - 1) {
+                    let c = P2(x: (xs[i] + xs[i + 1]) / 2, y: (ys[j] + ys[j + 1]) / 2)
+                    if Geometry.pointInPolygon(c, q) {
+                        inc.append(FaceBuilder.Rect(x0: xs[i], y0: ys[j], x1: xs[i + 1], y1: ys[j + 1]))
+                    }
+                }
+            }
+        }
+        let plateRects = inc
+
+        // 2) 側壁(長方形)と曲げ線
+        var wallRects: [(Int, FaceBuilder.Rect)] = []
+        for i in kept.keys.sorted() {
+            guard let w = kept[i] else { continue }
+            let L = w.depth - ded(w) / 2
+            guard L > 0.1 else { warnings.append("辺\(i + 1)の側壁が短すぎるため省略"); continue }
+            let u = dir(i), nn = inward(i)
+            var s = q[i], e = q[(i + 1) % n]
+            // 内角で、隣の辺に側壁が無い(外した)ときは逃げを空ける
+            if isConcave(pts, i) && kept[(i - 1 + n) % n] == nil { s = Geometry.add(s, Geometry.mul(u, relief)) }
+            if isConcave(pts, (i + 1) % n) && kept[(i + 1) % n] == nil { e = Geometry.sub(e, Geometry.mul(u, relief)) }
+            let s2 = Geometry.sub(s, Geometry.mul(nn, L)), e2 = Geometry.sub(e, Geometry.mul(nn, L))
+            let all = [s, e, s2, e2]
+            let r = FaceBuilder.Rect(x0: all.map(\.x).min()!, y0: all.map(\.y).min()!,
+                                     x1: all.map(\.x).max()!, y1: all.map(\.y).max()!)
+            wallRects.append((i, r))
+            var bend = Bend()
+            bend.axis = horizontal(i) ? .y : .x
+            bend.position = line(i)
+            bend.angleDeg = w.angleDeg
+            bend.up = w.up
+            bend.from = horizontal(i) ? min(s.x, e.x) : min(s.y, e.y)
+            bend.to = horizontal(i) ? max(s.x, e.x) : max(s.y, e.y)
+            res.bends.append(bend)
+            // 側壁の穴
+            for wh in pm.wallHoles where wh.edge == i {
+                let base = horizontal(i) ? P2(x: wh.along, y: line(i)) : P2(x: line(i), y: wh.along)
+                let c = Geometry.sub(base, Geometry.mul(nn, L - wh.fromFree))
+                var h = wh.hole
+                h.type = .circle
+                h.cx = c.x
+                h.cy = c.y
+                if wh.fromFree > L - h.d / 2 - t {
+                    warnings.append("辺\(i + 1)の側壁の穴が曲げ線に近すぎます(曲げで穴が変形するおそれ)")
+                }
+                res.holes.append(h)
+            }
+        }
+        // 側壁どうし・前板との重なり(読み取りの誤りの目安)
+        func overlap(_ a: FaceBuilder.Rect, _ b: FaceBuilder.Rect) -> Double {
+            max(0, min(a.x1, b.x1) - max(a.x0, b.x0)) * max(0, min(a.y1, b.y1) - max(a.y0, b.y0))
+        }
+        for x in 0..<wallRects.count {
+            for y in (x + 1)..<max(x + 1, wallRects.count) where overlap(wallRects[x].1, wallRects[y].1) > 0.5 {
+                warnings.append("辺\(wallRects[x].0 + 1)と辺\(wallRects[y].0 + 1)の側壁が展開図で重なっています")
+            }
+            if plateRects.contains(where: { overlap($0, wallRects[x].1) > 0.5 }) {
+                warnings.append("辺\(wallRects[x].0 + 1)の側壁が前板に重なっています")
+            }
+        }
+
+        // 3) 外形 = 前板 ∪ 側壁
+        let loop = FaceBuilder.union(plateRects + wallRects.map { $0.1 }, minus: [], warnings: &warnings)
+        res.outline = loop.map { OutlineVertex(x: $0.x, y: $0.y) }
+        // 4) 前板の穴(座標はそのまま)
+        res.holes = pm.holes + res.holes
+        return res
     }
 }

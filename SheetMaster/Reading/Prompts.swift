@@ -36,6 +36,7 @@ enum Prompts {
   ・quantity は付く端の数(両端なら2)。分からなければ2とし、questions に「妻板の枚数」を書く
   ・手前・奥のどちらに付くか、内側にはめるか端面に当てるかで寸法が変わる場合は、questions に書く
   ・部品が増えても構わない。迷ったら別部品として出す(作業者があとで外せる)
+- 段付き・L字の前板の全周に側壁がある箱形のカバーは、本体1部品として出す。内角で重なる側壁の切り分け(別部品の帯板)はアプリが自動で行うので、その帯板は parts に入れない
 - 部品表に材質・板厚の行が複数あるときは、蛍光ペン・丸印・手書き(「塗装N9.5」など)で指定された行を採用する
 
 【板厚の決め方】
@@ -98,7 +99,8 @@ report_inventory ツールで返す。最初に analysis に、どのビュー�
 - 外形 outline は反時計回りの頂点列。最後の頂点から最初の頂点へ自動で閉じる(同じ点を重ねて書かない)。
 - 曲げが無い部品: developed_by="flat"。図面寸法をそのまま outline / holes の座標にする。faces は null。
 - 曲げがある部品: developed_by="faces"(下の【曲げ部品の書き方】)。展開座標・控除・角の逃げはアプリが計算するので、あなたは面の外寸と穴の位置だけを書く。outline・holes・bends は空の配列にする。
-- faces で表せない曲げ部品(台形の面・斜めの面がつながる等)だけ developed_by="outer_dims"(外寸を曲げ線をはさんで並べた座標。控除は引かない。曲げ線は bends)。
+- 前板が長方形でない(段付き・L字・凹形など、辺が縦横だけの多角形)で、その辺に側壁(フランジ)が付く箱形・トレー形の部品は developed_by="plate_walls"(下の【前板+側壁の書き方】)。
+- faces・plate_walls で表せない曲げ部品(台形の面・斜めの面がつながる・円弧の辺に曲げ等)だけ developed_by="outer_dims"(外寸を曲げ線をはさんで並べた座標。控除は引かない。曲げ線は bends)。
 - 斜めの辺・角度寸法(33.5°など)は三角関数で頂点座標を計算する。
 
 【基準面が長方形でない曲げ部品 → outer_dims】
@@ -111,6 +113,20 @@ report_inventory ツールで返す。最初に analysis に、どのビュー�
  outline(反時計回り): (0,50)→(20,50)→(22,50)[arc_to_next cx=72, cy=50, clockwise=false]→(122,50)→(124,50)→(144,50)→(144,250)→(124,250)→(122,250)[arc_to_next cx=72, cy=250, clockwise=false]→(22,250)→(20,250)→(0,250)
  bends: {axis="x", position=20, start=50, end=250}, {axis="x", position=124, start=50, end=250}
  key_dimensions: 横144(x)、縦300(y)。フランジの穴も外寸並べの座標で書く(例: 左フランジの先端から15の穴 → X=15、右フランジの先端から15の穴 → X=144−15=129)。
+
+【前板+側壁の書き方(plate_walls)】
+段付き・L字・凹形の前板の辺に、奥行の決まった側壁が付く部品(箱形のカバー、トレーなど)。正面図の外形が二重線で描かれ、側面図・下面図に奥行(例: 30)が描かれていれば、その辺に側壁がある。
+- plate.outline: 前板の外形の頂点(外寸。原点は前板の左下、反時計回り、辺は縦か横だけ)。展開・控除は書かない。
+- plate.walls: 側壁のある辺。edge=辺の番号(1から。頂点Nから頂点N+1への辺、最後の辺は最後の頂点から頂点1へ)、depth=側壁の奥行の外寸、angle_deg=90。全部の辺にあるなら edge="all" の1行でよい。
+- plate.holes: 前板の穴(前板の外寸の座標)。
+- plate.wall_holes: 側壁の穴。edge=辺の番号、along=辺に沿った位置(前板と同じ座標。横の辺ならX、縦の辺ならY)、from_free=側壁の先端(前板から遠い縁)からの距離、dia=径。
+- 内角(へこんだ角)で重なる側壁の切り分け(短い方を別部品の帯板にする)、逃げの切込み、外角の切り欠き、控除はアプリが計算する。あなたは図面の寸法どおりに書くだけでよい。
+- outline・holes・bends は空の配列にする。
+例) 前板: 左の部分 幅125×高さ195、中央の出っ張り 幅80×高さ237、右の部分 幅96×高さ178(全幅301、上端がそろう)、全周に奥行30の側壁、左の部分の下の側壁に 2-φ7(左端から20と106、側壁の先端から22):
+ plate.outline = (0,42)(125,42)(125,0)(205,0)(205,59)(301,59)(301,237)(0,237)
+ plate.walls = [{edge:"all", depth:30}]
+ plate.wall_holes = [{edge:1, along:20, from_free:22, dia:7}, {edge:1, along:106, from_free:22, dia:7}]
+ (辺1 = (0,42)→(125,42) の下の辺)
 
 【帯板(丸めて溶接する側板)】
 - 曲げ線の無い長方形として developed_by="flat" で書く。横=帯の展開長、縦=帯の幅(壁の高さ。前板に突き当てるなら 壁の高さ − 前板の板厚)。
@@ -170,7 +186,7 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
 - アプリは「図面の写真」と「あなたの座標から作った形」を同じ縮尺で並べ、穴を四角で囲んで作業者に見比べてもらう。
 - そのため、すべての穴に photo を付ける: no=写真の番号(「写真1・全体」なら1)、px, py=その写真の「全体」画像の中で、その穴(丸・長穴なら中心)が描かれている位置のピクセル座標(左上が0,0、右・下が正)。全体画像の幅・高さはラベルに書いてある。
 - 拡大タイルの座標ではなく、必ず「全体」画像の座標で答える。穴を丸として描いているビュー(正面図・展開図)の位置を使う。
-- faces の holes も同じく photo を付ける。どの写真にも描かれていない穴だけ photo を省く。
+- faces の holes、plate の holes・wall_holes も同じく photo を付ける(側壁の穴は、その穴が丸く見えるビューの位置)。どの写真にも描かれていない穴だけ photo を省く。
 - 位置はできるだけ正確に(数ピクセル以内)。アプリは複数の穴の位置から写真の縮尺・傾きを計算するので、2つ以上の穴に付けること。
 
 【部品表に無い板・作業者が追加した板(妻板など)】
@@ -197,7 +213,32 @@ outline・holes・bends・faces は配列・オブジェクトのまま返す(JS
  "type": "object",
  "properties": {
   "analysis": {"type": "string", "description": "使ったビュー、寸法の拾い方、検算(先に書く)"},
-  "developed_by": {"type": "string", "enum": ["flat", "faces", "outer_dims"]},
+  "developed_by": {"type": "string", "enum": ["flat", "faces", "plate_walls", "outer_dims"]},
+  "plate": {
+   "type": ["object", "null"],
+   "description": "前板+側壁(developed_by=plate_walls)のときだけ",
+   "properties": {
+    "outline": {"type": "array", "items": {"type": "object", "properties": {"x": {"type": "number"}, "y": {"type": "number"}}, "required": ["x", "y"]}},
+    "walls": {"type": "array", "items": {"type": "object", "properties": {
+      "edge": {"type": ["integer", "string"], "description": "辺の番号(1から)、全周なら文字列 all"},
+      "depth": {"type": "number"}, "angle_deg": {"type": "number"},
+      "direction": {"type": "string", "enum": ["up", "down"]}}, "required": ["edge", "depth"]}},
+    "holes": {"type": "array", "items": {"type": "object", "properties": {
+      "type": {"type": "string", "enum": ["circle", "slot", "rect"]},
+      "cx": {"type": "number"}, "cy": {"type": "number"}, "d": {"type": "number"},
+      "x1": {"type": "number"}, "y1": {"type": "number"}, "x2": {"type": "number"}, "y2": {"type": "number"}, "width": {"type": "number"},
+      "w": {"type": "number"}, "h": {"type": "number"}, "corner_r": {"type": "number"},
+      "check": {"type": "string"},
+      "photo": {"type": "object", "properties": {"no": {"type": "integer"}, "px": {"type": "number"}, "py": {"type": "number"}}, "required": ["no", "px", "py"]}
+     }, "required": ["type"]}},
+    "wall_holes": {"type": "array", "items": {"type": "object", "properties": {
+      "edge": {"type": "integer"}, "along": {"type": "number"}, "from_free": {"type": "number"}, "dia": {"type": "number"},
+      "check": {"type": "string"},
+      "photo": {"type": "object", "properties": {"no": {"type": "integer"}, "px": {"type": "number"}, "py": {"type": "number"}}, "required": ["no", "px", "py"]}
+     }, "required": ["edge", "along", "from_free", "dia"]}}
+   },
+   "required": ["outline", "walls"]
+  },
   "faces": {
    "type": ["object", "null"],
    "description": "曲げ部品(developed_by=faces)のときだけ。面の外寸と穴",
