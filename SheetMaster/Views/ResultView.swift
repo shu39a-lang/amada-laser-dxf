@@ -124,7 +124,9 @@ struct ResultView: View {
             .sheet(item: $zooming) { ref in
                 if let p = d.parts.first(where: { $0.id == ref.id }) {
                     FullPreviewView(title: p.name, built: Geometry.build(part: p, settings: store.settings),
-                                    loadImages: { d.imageFiles.compactMap { store.loadImage($0) } })
+                                    loadImages: { d.imageFiles.compactMap { store.loadImage($0) } },
+                                    savedAlign: p.manualAlign,
+                                    onSaveAlign: { saveAlign(p.id, $0) })
                 }
             }
             .sheet(isPresented: $addingPart) {
@@ -133,7 +135,9 @@ struct ResultView: View {
             .sheet(item: $comparing) { ref in
                 if let p = d.parts.first(where: { $0.id == ref.id }) {
                     CompareSheet(title: p.name, built: Geometry.build(part: p, settings: store.settings),
-                                 loadImages: { d.imageFiles.compactMap { store.loadImage($0) } })
+                                 loadImages: { d.imageFiles.compactMap { store.loadImage($0) } },
+                                 savedAlign: p.manualAlign,
+                                 onSaveAlign: { saveAlign(p.id, $0) })
                 }
             }
             .navigationDestination(isPresented: $showExport) {
@@ -160,6 +164,14 @@ struct ResultView: View {
         } else {
             Text("図面が見つかりません")
         }
+    }
+
+    /// v3.1: 見比べ画面で手で合わせた写真の位置を部品に保存(次に開いたときも同じ位置)
+    private func saveAlign(_ partID: UUID, _ v: [Double]?) {
+        guard let di = store.drawings.firstIndex(where: { $0.id == drawingID }),
+              let pi = store.drawings[di].parts.firstIndex(where: { $0.id == partID }) else { return }
+        store.drawings[di].parts[pi].manualAlign = v
+        store.save()
     }
 
     /// 対象外の部品をレーザー部品に変えて、読み直しの画面を開く

@@ -240,6 +240,8 @@ struct Part: Codable, Hashable, Identifiable {
     var include: Bool = true
     /// v3.0: 部品表に無い板。"ai" = AIが見つけて追加、"user" = 作業者が「板を追加して読む」で追加。nil = 部品表どおり
     var addedBy: String? = nil
+    /// v3.1: 見比べ画面で手で合わせた写真の位置 [写真番号, ar, ai, br, bi, 写真の幅]
+    var manualAlign: [Double]? = nil
 
     var groupKey: String {
         let mat = material.isEmpty ? "材質未確定" : material
@@ -249,7 +251,7 @@ struct Part: Codable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case partKey, name, material, thickness, thicknessSource, thicknessEvidence, process,
-             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include, addedBy
+             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include, addedBy, manualAlign
     }
 }
 
@@ -289,7 +291,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "3.0"
+    static let version = "3.1"
 }
 
 enum Fmt {
