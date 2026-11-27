@@ -46,6 +46,8 @@ struct DrawingReader {
         }
         apply(inventory: inv, to: &rec)
         rec.rawInventory = J.pretty(inv)
+        /// v3.7: 採用した段階Aの回答(組立品の面とつなぎ方を部品に書き込むため)
+        var usedInv = inv
 
         // v2.8: 板の部品が0件なら、理由を添えて1回だけ洗い出しをやり直す
         if !rec.parts.contains(where: { $0.process == .laser }) {
@@ -62,8 +64,36 @@ struct DrawingReader {
                 if rec2.parts.contains(where: { $0.process == .laser }) {
                     rec = rec2
                     rec.rawInventory = J.pretty(inv2)
+                    usedInv = inv2
                 }
             }
+        }
+
+        // v3.7: 組立品の「面とつなぎ方」と部品一覧が食い違っていれば、理由を添えて1回だけやり直す
+        //  (例: 前板・底・後板を同じ板厚なのに3枚の平板に分けた/曲げでつなぐ面を別部品にした)
+        let probs = Self.assemblyProblems(usedInv, parts: rec.parts)
+        if !probs.isEmpty {
+            await progress("部品の分け方を見直し中…")
+            let note = """
+            前回の回答では、組立品の面のつなぎ方(assembly)と部品一覧(parts)に次の食い違いがありました:
+            \(probs.map { "・" + $0 }.joined(separator: "\n"))
+            【作り方を決める手順】に従って、面のつなぎ方と部品の分け方を決め直してください。
+            溶接にする理由(板厚・材質が違う/溶接記号・溶接線がある/定尺を超える/展開すると重なる)がはっきりしていれば、溶接のままでかまいません。その場合は joins の reason にその理由を書いてください。
+            """
+            if let inv2 = try? await inventory(prepared, hints: hintText, retryNote: note, onProgress: { _ in }) {
+                var rec2 = base
+                apply(inventory: inv2, to: &rec2)
+                let probs2 = Self.assemblyProblems(inv2, parts: rec2.parts)
+                if rec2.parts.contains(where: { $0.process == .laser }) && probs2.count < probs.count {
+                    rec = rec2
+                    rec.rawInventory = J.pretty(inv2)
+                    usedInv = inv2
+                }
+            }
+        }
+        Self.applyAssembly(usedInv, to: &rec)
+        for p in Self.assemblyProblems(usedInv, parts: rec.parts) {
+            rec.questions.insert("部品の分け方: " + p, at: 0)
         }
 
         // それでも0件なら、表題欄の品名で板を1つ作って展開を読みに行く(1枚もの図面が大半のため)
@@ -616,6 +646,146 @@ extension DrawingReader {
         }
         m.features = feats
         return m
+    }
+}
+
+// MARK: - v3.7 組立品の作り方(面とつなぎ方)
+//
+// 段階AでAIに「立体の面」と「面どうしを曲げでつなぐか溶接でつなぐか」を答えさせ、
+// 部品一覧と食い違っていないかをアプリが確かめる。手書きの作り方スケッチが無い図面でも、
+// 同じ板厚の面を一列に溶接で並べる(前板・底・後板を3枚の平板にする)ような分け方を見つける。
+
+struct AssemblyFace {
+    var id: String
+    var name: String
+    var width: Double?
+    var height: Double?
+    var seenIn: String
+    var part: String
+}
+
+struct AssemblyJoin {
+    var a: String
+    var b: String
+    var bend: Bool
+    var edgeLength: Double?
+    var reason: String
+}
+
+extension DrawingReader {
+    static func parseAssembly(_ o: [String: Any]) -> (faces: [AssemblyFace], joins: [AssemblyJoin], endPlates: String) {
+        guard let a = J.obj(o["assembly"]) else { return ([], [], "") }
+        let faces = J.arr(a["faces"]).compactMap { f -> AssemblyFace? in
+            let id = J.str(f["id"])
+            guard !id.isEmpty else { return nil }
+            return AssemblyFace(id: id, name: J.str(f["name"]).isEmpty ? id : J.str(f["name"]),
+                                width: J.num(f["width"]), height: J.num(f["height"]),
+                                seenIn: J.str(f["seen_in"]), part: J.str(f["part"]))
+        }
+        let joins = J.arr(a["joins"]).compactMap { j -> AssemblyJoin? in
+            let x = J.str(j["a"]), y = J.str(j["b"])
+            guard !x.isEmpty, !y.isEmpty, x != y else { return nil }
+            return AssemblyJoin(a: x, b: y, bend: J.str(j["method"]).lowercased() == "bend",
+                                edgeLength: J.num(j["edge_length"]), reason: J.str(j["reason"]))
+        }
+        return (faces, joins, J.str(a["end_plates"]))
+    }
+
+    /// 面のつなぎ方と部品一覧の食い違い(無ければ空)
+    static func assemblyProblems(_ o: [String: Any], parts: [Part]) -> [String] {
+        let (faces, joins, _) = parseAssembly(o)
+        guard !faces.isEmpty else { return [] }
+        var probs: [String] = []
+        var partByKey: [String: Part] = [:]
+        for p in parts where partByKey[p.partKey] == nil { partByKey[p.partKey] = p }
+        var byID: [String: AssemblyFace] = [:]
+        for f in faces { byID[f.id] = f }
+
+        // 1) 面を作る部品が一覧に無い
+        for f in faces where partByKey[f.part] == nil {
+            probs.append("面「\(f.name)」を作る部品「\(f.part)」が部品一覧にありません")
+        }
+        // 2) 曲げでつなぐ2面が別の部品になっている
+        for j in joins {
+            guard let fa = byID[j.a], let fb = byID[j.b] else { continue }
+            if j.bend && fa.part != fb.part {
+                probs.append("「\(fa.name)」と「\(fb.name)」は曲げでつなぐのに、別の部品(\(fa.part)・\(fb.part))になっています")
+            }
+        }
+        // 3) 同じ材質・板厚の面が一列に並び、両側とも溶接(曲げで1枚にできる可能性が高い)
+        //   例: 底が前板・後板の両方と溶接で、前板と後板も別の部品(3枚の平板に分けている)
+        func sameStock(_ x: String, _ y: String) -> Bool {
+            guard let p = partByKey[x], let q = partByKey[y],
+                  p.process == .laser, q.process == .laser,
+                  let t1 = p.thickness, let t2 = q.thickness else { return false }
+            return abs(t1 - t2) < 0.01 && materialGroup(p.material) == materialGroup(q.material)
+        }
+        func joined(_ x: String, _ y: String) -> Bool {
+            joins.contains { ($0.a == x && $0.b == y) || ($0.a == y && $0.b == x) }
+        }
+        for f in faces {
+            let mine = joins.filter { $0.a == f.id || $0.b == f.id }
+            if mine.contains(where: { $0.bend }) { continue }
+            let others: [AssemblyFace] = mine.filter { !$0.bend }
+                .compactMap { j in byID[j.a == f.id ? j.b : j.a] }
+                .filter { $0.part != f.part && sameStock($0.part, f.part) }
+            var pair: (AssemblyFace, AssemblyFace)? = nil
+            for i in others.indices {
+                for k in others.indices where k > i {
+                    let g = others[i], h = others[k]
+                    if pair == nil && g.part != h.part && !joined(g.id, h.id) { pair = (g, h) }
+                }
+            }
+            if let p = pair {
+                probs.append("「\(f.name)」は「\(p.0.name)」と「\(p.1.name)」の間にあり、同じ材質・板厚なのにどちらとも溶接の別板になっています。一列に並ぶ同じ板厚の面は、曲げで1枚(U字・コの字)にするのが基本です")
+            }
+        }
+        return probs
+    }
+
+    /// 面とつなぎ方を、部品ごとの説明(段階Bへの指示)と画面の説明に書き込む
+    static func applyAssembly(_ o: [String: Any], to rec: inout DrawingRecord) {
+        let (faces, joins, endPlates) = parseAssembly(o)
+        guard !faces.isEmpty else { return }
+        var byID: [String: AssemblyFace] = [:]
+        for f in faces { byID[f.id] = f }
+        func name(_ id: String) -> String { byID[id]?.name ?? id }
+        func size(_ f: AssemblyFace) -> String {
+            guard let w = f.width, let h = f.height else { return "" }
+            return " \(Fmt.num(w))×\(Fmt.num(h))"
+        }
+        for i in rec.parts.indices {
+            let key = rec.parts[i].partKey
+            let mine = faces.filter { $0.part == key }
+            guard !mine.isEmpty else { continue }
+            let ids = Set(mine.map { $0.id })
+            let bends = joins.filter { $0.bend && ids.contains($0.a) && ids.contains($0.b) }
+            let welds = joins.filter { !$0.bend && ids.contains($0.a) != ids.contains($0.b) }
+            var s = "この部品の面: " + mine.map { $0.name + size($0) + ($0.seenIn.isEmpty ? "" : "(\($0.seenIn))") }.joined(separator: " / ")
+            if !bends.isEmpty {
+                s += "。曲げでつなぐ面: " + bends.map { "\(name($0.a))–\(name($0.b))" }.joined(separator: "、")
+                s += "(この部品は1枚の板。面ごとに別の板にしない)"
+                if rec.parts[i].bendsCount < bends.count { rec.parts[i].bendsCount = bends.count }
+            }
+            if !welds.isEmpty {
+                let others = welds.map { ids.contains($0.a) ? name($0.b) : name($0.a) }
+                s += "。溶接で付く相手: " + Array(Set(others)).sorted().joined(separator: "、")
+            }
+            if mine.count == 1, !welds.isEmpty, endPlates == "outside" || endPlates == "inside" {
+                s += endPlates == "outside" ? "。端板は外側に当てる" : "。端板は内側にはめる"
+            }
+            let v = rec.parts[i].viewsDescription
+            rec.parts[i].viewsDescription = v.isEmpty ? s : v + "。" + s
+        }
+        // 「部品を確かめる」画面に出す要約
+        let b = joins.filter { $0.bend }.map { "\(name($0.a))–\(name($0.b))" }
+        let w = joins.filter { !$0.bend }.map { "\(name($0.a))–\(name($0.b))" + ($0.reason.isEmpty ? "" : "(\($0.reason))") }
+        var summary = "【作り方】"
+        summary += b.isEmpty ? "曲げでつなぐ面なし" : "曲げ: " + b.joined(separator: "、")
+        if !w.isEmpty { summary += " / 溶接: " + w.joined(separator: "、") }
+        if endPlates == "outside" { summary += " / 端板は外側に当てる" }
+        if endPlates == "inside" { summary += " / 端板は内側にはめる" }
+        rec.analysis = rec.analysis.isEmpty ? summary : rec.analysis + "\n" + summary
     }
 }
 
