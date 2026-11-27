@@ -27,7 +27,7 @@ root = pathlib.Path(output)
 PY
 xcodebuild -project SheetMaster.xcodeproj -scheme SheetMaster -configuration Release -destination 'generic/platform=iOS' -archivePath "$build_root/SheetMaster.xcarchive" SHEET_MASTER_BUILD_NUMBER="${PROJECT_BUILD_NUMBER:?}" SHEET_MASTER_SIGNING_TEAM="$(cat "$build_root/team")" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" PROVISIONING_PROFILE_SPECIFIER="$(cat "$build_root/profile")" archive
 archived_app="$build_root/SheetMaster.xcarchive/Products/Applications/SheetMaster.app/Info.plist"
-test "$(plutil -extract CFBundleShortVersionString raw "$archived_app")" = "3.7"
+test "$(plutil -extract CFBundleShortVersionString raw "$archived_app")" = "3.8"
 test "$(plutil -extract CFBundleIdentifier raw "$archived_app")" = "$bundle_id"
 test "$(plutil -extract CFBundleVersion raw "$archived_app")" = "$PROJECT_BUILD_NUMBER"
 xcodebuild -exportArchive -archivePath "$build_root/SheetMaster.xcarchive" -exportOptionsPlist "$build_root/ExportOptions.plist" -exportPath "$build_root/ios/ipa"

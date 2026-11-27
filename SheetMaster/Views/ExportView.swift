@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// ③ DXFファイルを作る(できたファイルの中身を確認してから送る)
 struct ExportView: View {
@@ -30,8 +31,17 @@ struct ExportView: View {
                     if folders.isEmpty {
                         Text("「ファイル」アプリへの保存に失敗しました").foregroundStyle(.red).font(.footnote)
                     } else {
+                        // v3.8: タップすると「ファイル」アプリでそのフォルダを開く
                         ForEach(folders, id: \.self) { f in
-                            Label(f, systemImage: "folder.fill").font(.footnote)
+                            Button {
+                                openInFiles(f)
+                            } label: {
+                                HStack {
+                                    Label(f, systemImage: "folder.fill").font(.footnote)
+                                    Spacer()
+                                    Text("開く").font(.footnote.bold())
+                                }
+                            }
                         }
                     }
                     Button("この会社名で保存し直す") { make() }
@@ -39,7 +49,7 @@ struct ExportView: View {
                 } header: {
                     Text("iPhoneに自動で保存しました")
                 } footer: {
-                    Text("「ファイル」アプリ → このiPhone内 → SHEET MASTER → DXF → 会社 → 素材 → 板厚 のフォルダに入っています。会社名が違っていたら直して「保存し直す」を押してください。")
+                    Text("「ファイル」アプリ → このiPhone内 → SHEET MASTER(アプリのアイコン付きのフォルダ)→ DXF → 会社 → 素材 → 板厚 のフォルダに入っています。フォルダ名をタップすると「ファイル」アプリで開きます。会社名が違っていたら直して「保存し直す」を押してください。")
                 }
             }
             if !files.isEmpty {
@@ -115,6 +125,15 @@ struct ExportView: View {
                 }
             }
         )
+    }
+
+    /// v3.8: 保存したフォルダ(DXF/会社/素材/板厚)を「ファイル」アプリで開く
+    private func openInFiles(_ folder: String) {
+        let dir = Exporter.dxfRoot.deletingLastPathComponent().appendingPathComponent(folder, isDirectory: true)
+        let path = dir.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? dir.path
+        if let url = URL(string: "shareddocuments://" + path) {
+            UIApplication.shared.open(url)
+        }
     }
 
     private func make() {
