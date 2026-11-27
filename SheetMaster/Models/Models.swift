@@ -279,6 +279,9 @@ struct Part: Codable, Hashable, Identifiable {
     var addedBy: String? = nil
     /// v3.1: 見比べ画面で手で合わせた写真の位置 [写真番号, ar, ai, br, bi, 写真の幅]
     var manualAlign: [Double]? = nil
+    /// v3.6: 「形から部品を作る」で作った部品の形の種類(ShapeKind の rawValue)。nil = 図面から読んだ部品
+    ///  この部品は展開を読みに行かない(作業者が入れた寸法で展開済み)
+    var shapeKind: String? = nil
 
     var groupKey: String {
         let mat = material.isEmpty ? "材質未確定" : material
@@ -288,7 +291,7 @@ struct Part: Codable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case partKey, name, material, thickness, thicknessSource, thicknessEvidence, process,
-             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include, addedBy, manualAlign
+             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include, addedBy, manualAlign, shapeKind
     }
 }
 
@@ -308,6 +311,10 @@ struct DrawingRecord: Codable, Hashable, Identifiable {
     var rawInventory: String? = nil
     /// v3.5: 図面を出した会社(表題欄の会社名)。DXFの保存フォルダ名に使う
     var company: String? = nil
+    /// v3.6: true = 部品一覧を確かめている途中(まだ展開を読んでいない)。nil / false = 展開まで済み
+    var reviewPending: Bool? = nil
+    /// v3.6: 読み取りの前に作業者が入れた前提(例:「部品は8種類。板厚違いは1種類」)
+    var hints: String? = nil
 }
 
 // MARK: - 設定テーブル
@@ -330,7 +337,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "3.5"
+    static let version = "3.6"
 }
 
 enum Fmt {

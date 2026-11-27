@@ -12,6 +12,8 @@ struct HomeView: View {
     @State private var errorText: String?
     @State private var openID: UUID?
     @State private var showSettings = false
+    /// v3.6: 読み取りの前提(わかれば)
+    @State private var hints = ""
 
     var body: some View {
         List {
@@ -52,6 +54,17 @@ struct HomeView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
 
+            // v3.6: 図面の前提を先に伝える(部品の分け方の読み違いを減らす)
+            Section {
+                TextField("例: 部品は8種類。板厚が違うのは1種類(t3)だけ。大きい板をコの字に曲げて3面を覆う", text: $hints, axis: .vertical)
+                    .lineLimit(2...6)
+                    .disabled(running)
+            } header: {
+                Text("前提(わかれば・空でもOK)")
+            } footer: {
+                Text("部品の数・板厚の種類・どう曲げて作るかなど、わかっていることを書くと、その通りに部品を分けます。")
+            }
+
             Section {
                 Button {
                     guard !running else { return }
@@ -75,7 +88,7 @@ struct HomeView: View {
                     Text(e).foregroundStyle(.red).font(.footnote)
                 }
             } footer: {
-                if running { Text("曲げのある図面は3〜5分ほどかかります。受信している文字数が増えていれば正常です。画面を閉じずにお待ちください。") }
+                if running { Text("まず部品を洗い出します(1〜2分)。次の画面で部品の分け方を確かめてから、展開を読みます。受信している文字数が増えていれば正常です。") }
             }
 
             if !store.drawings.isEmpty {
@@ -88,6 +101,9 @@ struct HomeView: View {
                                 Text(d.title.isEmpty ? "(品名なし)" : d.title).font(.headline)
                                 Text("\(d.drawingNumber)  板 \(d.parts.filter { $0.process == .laser }.count)種類")
                                     .font(.caption).foregroundStyle(.secondary)
+                                if d.reviewPending == true {
+                                    Text("部品の確認中(展開はまだ)").font(.caption2.bold()).foregroundStyle(.orange)
+                                }
                             }
                         }
                     }
@@ -135,10 +151,12 @@ struct HomeView: View {
         rec.imageFiles = images.compactMap { store.storeImage($0) }
         let reader = DrawingReader(apiKey: store.apiKey, settings: store.settings)
         do {
-            let result = try await reader.read(images: images, into: rec) { text in progressText = text }
+            // v3.6: ここでは部品の洗い出しまで。展開は「部品を確かめる」画面で確かめてから読む
+            let result = try await reader.readInventory(images: images, into: rec, hints: hints) { text in progressText = text }
             store.upsert(result)
             images = []
             picks = []
+            hints = ""
             openID = result.id
         } catch {
             errorText = error.localizedDescription

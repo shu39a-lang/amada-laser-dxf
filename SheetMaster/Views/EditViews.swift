@@ -81,7 +81,12 @@ struct PartEditSheet: View {
                             ForEach(flat.outline) { $v in
                                 VStack(alignment: .leading) {
                                     if let c = v.check {
-                                        Text("要確認: " + c).font(.caption2).foregroundStyle(.orange)
+                                        HStack(alignment: .firstTextBaseline) {
+                                            Text("要確認: " + c).font(.caption2).foregroundStyle(.orange)
+                                            Spacer()
+                                            Button("確定") { v.check = nil }
+                                                .font(.caption2).buttonStyle(.bordered)
+                                        }
                                     }
                                     HStack {
                                         NumField(label: "X", value: $v.x)
@@ -158,7 +163,15 @@ struct HoleEditor: View {
                 Text("異形の穴(数値の変更は「指示して読み直す」で)").font(.caption)
             }
             if !hole.note.isEmpty { Text(hole.note).font(.caption2).foregroundStyle(.secondary) }
-            if let c = hole.check { Text("要確認: " + c).font(.caption2).foregroundStyle(.orange) }
+            if let c = hole.check {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("要確認: " + c).font(.caption2).foregroundStyle(.orange)
+                    Spacer()
+                    // v3.6: 実物・図面で確かめたら確定にする(オレンジの印が消える)
+                    Button("確定") { hole.check = nil }
+                        .font(.caption2).buttonStyle(.bordered)
+                }
+            }
         }
     }
 }
@@ -301,11 +314,36 @@ struct FacesEditor: View {
                 }
             }
             .onDelete { faces.features.remove(atOffsets: $0) }
+            // v3.6: 形から作った部品などに、面を選んで丸穴を足す
+            Menu {
+                Button(faces.baseName) { addHole("base") }
+                ForEach(faces.flanges) { f in
+                    Button(f.name.isEmpty ? f.id : f.name) { addHole(f.id) }
+                }
+            } label: {
+                Label("丸穴を追加(面を選ぶ)", systemImage: "plus.circle")
+            }
         } header: {
             Text("穴・切欠き(\(faces.features.count))")
         } footer: {
             Text("a = 辺に沿った位置、d = その面の先端からの距離(基準面は左下からの X, Y)。")
         }
+    }
+
+    private func addHole(_ face: String) {
+        var ft = FaceFeature()
+        ft.face = face
+        ft.kind = "hole"
+        var h = Hole(type: .circle, d: 10)
+        if face == "base" {
+            h.cx = (faces.width / 2 * 10).rounded() / 10
+            h.cy = (faces.height / 2 * 10).rounded() / 10
+        } else {
+            h.cx = 20
+            h.cy = 10
+        }
+        ft.hole = h
+        faces.features.append(ft)
     }
 
     private func edgeLabel(_ e: String) -> String {
@@ -496,5 +534,140 @@ struct PlateEditor: View {
         } footer: {
             Text("位置 = 辺に沿った位置(前板と同じ座標)、先端から = 側壁の先端(前板から遠い縁)からの距離。")
         }
+    }
+}
+
+
+// MARK: - v3.6 形から部品を作る
+
+/// 形の種類を選び、外寸を入れて部品を作る(AIは使わない)。
+///  曲げのある形は面モデルにして、展開・控除・角の逃げは既存の計算(FaceBuilder)に任せる
+struct ShapePartSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let drawingID: UUID
+    @State private var kind: ShapeKind = .channel
+    @State private var values: [Double] = ShapeKind.channel.fields.map { $0.value }
+    @State private var name = ""
+    @State private var sameAsMain = true
+    @State private var material = ""
+    @State private var thicknessText = ""
+    @State private var quantity = 1
+    @State private var mirror = false
+
+    /// 本体(1つ目のレーザー部品)
+    private var mainPart: Part? {
+        store.drawings.first { $0.id == drawingID }?.parts.first { $0.process == .laser && $0.thickness != nil }
+    }
+    private var useMaterial: String { sameAsMain ? (mainPart?.material ?? "") : material }
+    private var useThickness: Double? {
+        sameAsMain ? mainPart?.thickness : Double(thicknessText.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+    }
+
+    private func valueBinding(_ i: Int) -> Binding<Double> {
+        Binding(get: { i < values.count ? values[i] : 0 },
+                set: { if i < values.count { values[i] = $0 } })
+    }
+
+    /// 入力中の形で作った部品(プレビュー用)
+    private var draft: (part: Part?, error: String?) {
+        let r = ShapeTemplates.make(kind, values)
+        guard let f = r.flat else { return (nil, r.error) }
+        var p = Part()
+        p.name = name.isEmpty ? kind.label : name
+        p.material = useMaterial
+        p.thickness = useThickness
+        p.thicknessSource = useThickness == nil ? "unknown" : "user"
+        p.process = .laser
+        p.include = true
+        p.quantity = quantity
+        p.mirrorPair = mirror
+        p.addedBy = "user"
+        p.shapeKind = kind.rawValue
+        p.bendsCount = f.faces?.flanges.count ?? 0
+        p.flat = f
+        return (p, nil)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("形", selection: $kind) {
+                        ForEach(ShapeKind.allCases) { Text($0.label).tag($0) }
+                    }
+                    Text(kind.help).font(.caption).foregroundStyle(.secondary)
+                }
+                Section {
+                    ForEach(kind.fields.indices, id: \.self) { i in
+                        NumField(label: kind.fields[i].label, value: valueBinding(i))
+                    }
+                } header: {
+                    Text("寸法(mm・外寸)")
+                }
+                Section("プレビュー") {
+                    let dr = draft
+                    if let p = dr.part {
+                        if p.thickness == nil {
+                            Text("板厚を入れると展開のプレビューが出ます").font(.footnote).foregroundStyle(.yellow)
+                        } else {
+                            let built = Geometry.build(part: p, settings: store.settings)
+                            if built.outline.isEmpty {
+                                ForEach(built.blocking, id: \.self) { Text("・" + $0).font(.caption).foregroundStyle(.red) }
+                            } else {
+                                PartPreview(built: built, showLabels: true)
+                                    .frame(height: 220)
+                                Text("展開寸法 \(Fmt.num(built.width)) × \(Fmt.num(built.height)) mm")
+                                    .font(.subheadline)
+                                ForEach(built.warnings, id: \.self) { Text("・" + $0).font(.caption2).foregroundStyle(.secondary) }
+                            }
+                        }
+                    } else if let e = dr.error {
+                        Text(e).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+                Section {
+                    TextField("名前(例: 本体コの字板)", text: $name)
+                    Toggle("本体と同じ材質・板厚", isOn: $sameAsMain)
+                    if sameAsMain {
+                        if let m = mainPart {
+                            Text("\(m.material.isEmpty ? "材質未確定" : m.material)  t\(m.thickness.map(Fmt.num) ?? "?")")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("板厚の決まった部品がまだありません。下のスイッチを切って入れてください").font(.caption).foregroundStyle(.yellow)
+                        }
+                    } else {
+                        TextField("材質(例: SUS304)", text: $material)
+                        TextField("板厚(例: 1.5)", text: $thicknessText).keyboardType(.decimalPad)
+                    }
+                    Stepper("数量 \(quantity)枚", value: $quantity, in: 1...999)
+                    Toggle("勝手違い(左右反転)も作る", isOn: $mirror)
+                } header: {
+                    Text("名前・材質・板厚・数量")
+                } footer: {
+                    Text("穴は、作ったあとの「数値を直す」で面を選んで足せます。")
+                }
+            }
+            .onChange(of: kind) { _, k in values = k.fields.map { $0.value } }
+            .navigationTitle("形から部品を作る")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("閉じる") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("作る") { add() }
+                        .bold()
+                        .disabled(draft.part == nil)
+                }
+            }
+        }
+    }
+
+    private func add() {
+        guard var p = draft.part,
+              let di = store.drawings.firstIndex(where: { $0.id == drawingID }) else { return }
+        p.partKey = PartOps.newKey(store.drawings[di])
+        store.drawings[di].parts.append(p)
+        store.save()
+        dismiss()
     }
 }

@@ -1,6 +1,6 @@
 workflows:
   sheet-master-v2:
-    name: SHEET MASTER v3.5 - TestFlight
+    name: SHEET MASTER v3.6 - TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
@@ -9,7 +9,7 @@ workflows:
       events:
         - push
       branch_patterns:
-        - pattern: sheet-master-v3-5
+        - pattern: sheet-master-v3-6
           include: true
           source: true
     environment:

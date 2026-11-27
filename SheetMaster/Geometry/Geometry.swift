@@ -1138,3 +1138,155 @@ enum PlateBuilder {
         return res
     }
 }
+
+// MARK: - v3.6 形から部品を作る
+//
+// 読み取り結果が実物と大きく違うとき、作業者が「形の種類」と外寸だけを入れて部品を作る。
+// 曲げのある形は面モデル(FaceModel)にして、展開・控除・角の逃げは既存の FaceBuilder に任せる。
+// 作った部品は「数値を直す」で面の寸法・穴・切欠きをそのまま直せる。
+
+enum ShapeKind: String, CaseIterable, Identifiable, Codable {
+    case plate, angleL, channel, zee, hat, box, gate
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .plate: return "平板(長方形)"
+        case .angleL: return "L字(1回曲げ)"
+        case .channel: return "コの字(2回曲げ・同じ向き)"
+        case .zee: return "Z字(2回曲げ・反対向き)"
+        case .hat: return "ハット形(4回曲げ)"
+        case .box: return "箱形(4辺に立上り)"
+        case .gate: return "門形(脚の間を切り欠く・外周に返し)"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .plate: return "曲げの無い長方形の板。穴はあとで「数値を直す」で足します。"
+        case .angleL: return "長さ = 曲げ線の方向の長さ。面1・面2 は外寸。"
+        case .channel: return "長さ = 曲げ線の方向の長さ。側面1・中央・側面2 は外寸。3面を覆う大きな板など。"
+        case .zee: return "長さ = 曲げ線の方向の長さ。面1・中央・面2 は外寸。"
+        case .hat: return "長さ = 曲げ線の方向の長さ。つば・立上り・天面 は外寸(左右のつば・立上りは同じ寸法)。"
+        case .box: return "底の横・縦と、4辺の立上り(外寸)。角の逃げはアプリが入れます。"
+        case .gate: return "横・縦 = 面の外寸。脚の幅 = 左右に残す幅。開口の高さ = 下端から切欠きの上端まで。返しの深さ = 上と左右の外周に付ける曲げ(0なら返し無し)。"
+        }
+    }
+
+    /// 入力欄の名前と初期値
+    var fields: [(label: String, value: Double)] {
+        switch self {
+        case .plate: return [("横", 100), ("縦", 100)]
+        case .angleL: return [("長さ", 200), ("面1", 30), ("面2", 30)]
+        case .channel: return [("長さ", 200), ("側面1", 50), ("中央", 100), ("側面2", 50)]
+        case .zee: return [("長さ", 200), ("面1", 20), ("中央", 50), ("面2", 20)]
+        case .hat: return [("長さ", 200), ("つば", 20), ("立上り", 50), ("天面", 100)]
+        case .box: return [("横", 200), ("縦", 150), ("立上り", 30)]
+        case .gate: return [("横", 175), ("縦", 225), ("脚の幅", 30), ("開口の高さ", 200), ("返しの深さ", 0)]
+        }
+    }
+
+    var bendsCount: Int {
+        switch self {
+        case .plate: return 0
+        case .angleL: return 1
+        case .channel, .zee: return 2
+        case .hat, .box: return 4
+        case .gate: return 0
+        }
+    }
+}
+
+enum ShapeTemplates {
+    /// 形の種類と外寸 → 展開前のデータ。入力が足りない・矛盾しているときはその理由を返す
+    static func make(_ kind: ShapeKind, _ v: [Double]) -> (flat: FlatPattern?, error: String?) {
+        let need = kind.fields.count
+        guard v.count >= need else { return (nil, "寸法が足りません") }
+        for i in 0..<need where v[i] < 0 { return (nil, "\(kind.fields[i].label)がマイナスです") }
+
+        var f = FlatPattern()
+        f.analysis = "形から作成: \(kind.label) " + zip(kind.fields, v).map { "\($0.0.label)\(Fmt.num($0.1))" }.joined(separator: " ")
+        f.confidence = 1
+
+        func flange(_ id: String, _ name: String, parent: String = "base", edge: String, _ length: Double, up: Bool = false) -> FaceFlange {
+            FaceFlange(id: id, name: name, parent: parent, edge: edge, length: length, up: up)
+        }
+        var fm = FaceModel()
+
+        switch kind {
+        case .plate:
+            guard v[0] > 0, v[1] > 0 else { return (nil, "横・縦を入れてください") }
+            f.developedBy = .flat
+            f.outline = [OutlineVertex(x: 0, y: 0), OutlineVertex(x: v[0], y: 0),
+                         OutlineVertex(x: v[0], y: v[1]), OutlineVertex(x: 0, y: v[1])]
+            return (f, nil)
+
+        case .angleL:
+            guard v[0] > 0, v[1] > 0, v[2] > 0 else { return (nil, "長さ・面1・面2を入れてください") }
+            fm.baseName = "面1"
+            fm.width = v[0]; fm.height = v[1]
+            fm.flanges = [flange("F1", "面2", edge: "top", v[2])]
+
+        case .channel, .zee:
+            guard v[0] > 0, v[2] > 0, v[1] > 0, v[3] > 0 else { return (nil, "長さと3つの面の寸法を入れてください") }
+            fm.baseName = "中央"
+            fm.width = v[0]; fm.height = v[2]
+            let n1 = kind == .channel ? "側面1" : "面1", n2 = kind == .channel ? "側面2" : "面2"
+            fm.flanges = [flange("F1", n1, edge: "bottom", v[1]),
+                          flange("F2", n2, edge: "top", v[3], up: kind == .zee)]
+
+        case .hat:
+            guard v[0] > 0, v[1] > 0, v[2] > 0, v[3] > 0 else { return (nil, "長さ・つば・立上り・天面を入れてください") }
+            fm.baseName = "天面"
+            fm.width = v[0]; fm.height = v[3]
+            fm.flanges = [flange("F1", "立上り1", edge: "bottom", v[2]),
+                          flange("F2", "立上り2", edge: "top", v[2]),
+                          flange("F3", "つば1", parent: "F1", edge: "free", v[1], up: true),
+                          flange("F4", "つば2", parent: "F2", edge: "free", v[1], up: true)]
+
+        case .box:
+            guard v[0] > 0, v[1] > 0, v[2] > 0 else { return (nil, "横・縦・立上りを入れてください") }
+            fm.baseName = "底"
+            fm.width = v[0]; fm.height = v[1]
+            fm.flanges = [flange("F1", "下の立上り", edge: "bottom", v[2]),
+                          flange("F2", "上の立上り", edge: "top", v[2]),
+                          flange("F3", "左の立上り", edge: "left", v[2]),
+                          flange("F4", "右の立上り", edge: "right", v[2])]
+
+        case .gate:
+            let W = v[0], H = v[1], leg = v[2], open = v[3], ret = v[4]
+            guard W > 0, H > 0 else { return (nil, "横・縦を入れてください") }
+            guard leg > 0, W - 2 * leg > 0 else { return (nil, "脚の幅が大きすぎます(横の半分より小さくしてください)") }
+            guard open > 0, open < H else { return (nil, "開口の高さは0より大きく、縦より小さくしてください") }
+            fm.baseName = "面"
+            fm.width = W; fm.height = H
+            var nt = FaceFeature()
+            nt.face = "base"
+            nt.kind = "notch"
+            nt.edge = "bottom"
+            nt.center = W / 2
+            nt.width = W - 2 * leg
+            nt.depth = open
+            nt.roundEnd = false
+            fm.features = [nt]
+            if ret > 0 {
+                fm.flanges = [flange("F1", "上の返し", edge: "top", ret),
+                              flange("F2", "左の返し", edge: "left", ret),
+                              flange("F3", "右の返し", edge: "right", ret)]
+            }
+            if ret <= 0 {
+                // 返しが無ければ曲げの無い平板(門形の外形を直接作る)
+                f.developedBy = .flat
+                let x0 = leg, x1 = W - leg
+                f.outline = [OutlineVertex(x: 0, y: 0), OutlineVertex(x: x0, y: 0), OutlineVertex(x: x0, y: open),
+                             OutlineVertex(x: x1, y: open), OutlineVertex(x: x1, y: 0), OutlineVertex(x: W, y: 0),
+                             OutlineVertex(x: W, y: H), OutlineVertex(x: 0, y: H)]
+                return (f, nil)
+            }
+        }
+        f.developedBy = .faces
+        f.faces = fm
+        return (f, nil)
+    }
+}

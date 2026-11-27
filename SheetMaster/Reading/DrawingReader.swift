@@ -15,18 +15,31 @@ struct DrawingReader {
         self.settings = settings
     }
 
+    /// 洗い出しと展開を続けて行う(v3.5までの動き。今は使っていないが残しておく)
     func read(images: [UIImage],
               into base: DrawingRecord,
               progress: @escaping @MainActor (String) -> Void) async throws -> DrawingRecord {
+        let rec = try await readInventory(images: images, into: base, hints: "", progress: progress)
+        return try await readFlats(record: rec, images: images, progress: progress)
+    }
+
+    /// v3.6: 段階A(部品の洗い出し)だけ。
+    ///  結果は「部品を確かめる」画面で作業者が直してから、readFlats で展開を読む
+    ///  (組立図のビューを別々の部品と読み違えたまま展開まで進むと、全部やり直しになるため)
+    func readInventory(images: [UIImage],
+                       into base: DrawingRecord,
+                       hints: String,
+                       progress: @escaping @MainActor (String) -> Void) async throws -> DrawingRecord {
         await progress("写真を拡大タイルに分割中…")
         let prepared = ImagePreprocessor.prepare(images, grid: settings.tileMode.grid)
         guard !prepared.isEmpty else { throw ClaudeError.noToolResult("画像を読み込めませんでした") }
+        let hintText = hints.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // 段階A
         await progress("部品を洗い出し中(材質・板厚・数量)…")
         var rec = base
         let counterA = ReceiveCounter()
-        let inv = try await inventory(prepared) { n in
+        let inv = try await inventory(prepared, hints: hintText) { n in
             if let total = counterA.add(n) {
                 Task { @MainActor in progress("部品を洗い出し中…(受信 \(total)字)") }
             }
@@ -43,7 +56,7 @@ struct DrawingReader {
             表題欄の品名の部品(カバー・ブラケット・板など)は、溶接ナット・溶接・焼け取り・みがきの指示があっても板金部品なので、必ず parts に process="laser" で入れてください。
             溶接ナット・ボルトなどは process="purchased" で別の行にします。parts は配列で返してください(文字列にしない)。
             """
-            if let inv2 = try? await inventory(prepared, retryNote: note, onProgress: { _ in }) {
+            if let inv2 = try? await inventory(prepared, hints: hintText, retryNote: note, onProgress: { _ in }) {
                 var rec2 = base
                 apply(inventory: inv2, to: &rec2)
                 if rec2.parts.contains(where: { $0.process == .laser }) {
@@ -67,8 +80,29 @@ struct DrawingReader {
             rec.questions.insert("板の部品を自動で見つけられなかったため、品名の板を1つ追加して読みました。材質・板厚・数量を確認してください", at: 0)
         }
 
+        rec.hints = hintText.isEmpty ? nil : hintText
+        rec.reviewPending = true
+        rec.appVersion = AppInfo.version
+        return rec
+    }
+
+    /// v3.6: 段階B(展開形状)。展開がまだ無いレーザー部品だけを読む。
+    ///  「形から部品を作る」で作った部品と、すでに展開のある部品は読まない
+    func readFlats(record: DrawingRecord,
+                   images: [UIImage],
+                   progress: @escaping @MainActor (String) -> Void) async throws -> DrawingRecord {
+        var rec = record
+        let targets = rec.parts.filter { $0.process == .laser && $0.shapeKind == nil && $0.flat == nil }
+        if targets.isEmpty {
+            rec.reviewPending = nil
+            rec.appVersion = AppInfo.version
+            return rec
+        }
+        await progress("写真を拡大タイルに分割中…")
+        let prepared = ImagePreprocessor.prepare(images, grid: settings.tileMode.grid)
+        guard !prepared.isEmpty else { throw ClaudeError.noToolResult("画像を読み込めませんでした") }
+
         // 段階B(レーザー部品だけ、並列)
-        let targets = rec.parts.filter { $0.process == .laser }
         await progress("展開形状を読み取り中(0/\(targets.count))…")
         var done = 0
         let snapshot = rec
@@ -106,6 +140,7 @@ struct DrawingReader {
         for id in rec.parts.filter({ $0.flat?.plate != nil }).map(\.id) {
             Self.syncStrips(in: &rec, parentID: id)
         }
+        rec.reviewPending = nil
         rec.appVersion = AppInfo.version
         return rec
     }
@@ -124,10 +159,13 @@ struct DrawingReader {
 
     // MARK: - 段階A
 
-    private func inventory(_ images: [PreparedImage], retryNote: String? = nil,
+    private func inventory(_ images: [PreparedImage], hints: String = "", retryNote: String? = nil,
                            onProgress: @escaping (Int) -> Void) async throws -> [String: Any] {
         var content = ClaudeClient.imageBlocks(images, cacheLast: false)
         var text = "この図面のレーザー加工対象の板部品をすべて洗い出してください。"
+        if !hints.isEmpty {
+            text += "\n\n【作業者からの前提(最優先。図面の読み方と食い違うときはこちらに合わせる)】\n" + hints
+        }
         if let n = retryNote { text += "\n\n【読み直しの理由】\n" + n }
         content.append(["type": "text", "text": text])
         do {
@@ -248,6 +286,9 @@ struct DrawingReader {
         """
         if part.addedBy != nil {
             text += "\n\n【この部品について】部品表に無い板です(\(part.addedBy == "user" ? "作業者が追加" : "図から見つけて追加")。寸法が書かれていなければ本体の断面などから計算し、推定した頂点・穴には check に理由を書いてください。"
+        }
+        if let h = drawing.hints, !h.isEmpty {
+            text += "\n\n【図面全体についての作業者の前提】\n\(h)"
         }
         if !part.userHint.isEmpty {
             text += "\n\n【作業者からの指示(最優先)】\n\(part.userHint)"
