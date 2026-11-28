@@ -107,7 +107,7 @@ enum Exporter {
             s = s.replacingOccurrences(of: w, with: "")
         }
         s = safe(s.trimmingCharacters(in: .whitespacesAndNewlines))
-        return ["", ".", "..", "不明", "未記載", "記載なし", "読み取り不能"].contains(s) ? "会社名未確定" : s
+        return s.isEmpty ? "会社名未確定" : s
     }
 
     /// 素材(鉄・ステンレス・アルミ)+材質名。例: 「鉄(SPCC)」「ステンレス(SUS304)」

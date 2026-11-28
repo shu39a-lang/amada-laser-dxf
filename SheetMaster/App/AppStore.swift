@@ -111,16 +111,7 @@ final class AppStore {
     }
 
     func upsert(_ rec: DrawingRecord) {
-        if let i = drawings.firstIndex(where: { $0.id == rec.id }) {
-            var updated = rec
-            if drawings[i].companyEdited == true {
-                updated.company = drawings[i].company
-                updated.companyEdited = true
-            }
-            drawings[i] = updated
-        } else {
-            drawings.insert(rec, at: 0)
-        }
+        if let i = drawings.firstIndex(where: { $0.id == rec.id }) { drawings[i] = rec } else { drawings.insert(rec, at: 0) }
         save()
     }
 

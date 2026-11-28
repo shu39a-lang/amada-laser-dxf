@@ -20,16 +20,13 @@ struct ExportView: View {
                         .font(.subheadline)
                 }
             }
-            Section {
-                CompanyField(drawingID: drawingID)
-                if !made {
-                    Button("この社名でDXFを保存") { make() }
-                        .disabled(!hasCompany)
-                }
-            }
             if made && !files.isEmpty {
                 // v3.5: 「ファイル」アプリに自動で保存した場所
                 Section {
+                    HStack {
+                        Text("会社名").foregroundStyle(.secondary)
+                        TextField("例: 日新電子工業", text: companyBinding)
+                    }
                     let folders = Array(Set(files.compactMap(\.savedFolder))).sorted()
                     if folders.isEmpty {
                         Text("「ファイル」アプリへの保存に失敗しました").foregroundStyle(.red).font(.footnote)
@@ -47,10 +44,12 @@ struct ExportView: View {
                             }
                         }
                     }
+                    Button("この会社名で保存し直す") { make() }
+                        .font(.footnote)
                 } header: {
                     Text("iPhoneに自動で保存しました")
                 } footer: {
-                    Text("「ファイル」アプリ → このiPhone内 → SHEET MASTER(アプリのアイコン付きのフォルダ)→ DXF → 会社 → 素材 → 板厚 のフォルダに入っています。フォルダ名をタップすると「ファイル」アプリで開きます。会社名が違っていたら直して「この社名でDXFを保存」を押してください。")
+                    Text("「ファイル」アプリ → このiPhone内 → SHEET MASTER(アプリのアイコン付きのフォルダ)→ DXF → 会社 → 素材 → 板厚 のフォルダに入っています。フォルダ名をタップすると「ファイル」アプリで開きます。会社名が違っていたら直して「保存し直す」を押してください。")
                 }
             }
             if !files.isEmpty {
@@ -102,12 +101,7 @@ struct ExportView: View {
         .smScreen() // v3.9: アマダの赤の背景
         .navigationTitle("DXFファイル")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { if hasCompany && !made { make() } }
-        .onChange(of: company) { _, _ in
-            files = []
-            skipped = []
-            made = false
-        }
+        .onAppear(perform: make)
         .sheet(isPresented: $showShare) { ShareSheet(items: files.map(\.url)) }
         .sheet(item: $zoom) { f in
             // v2.9: ここからも見比べられるようにする(勝手違いは写真と左右が逆なので除く)
@@ -122,6 +116,18 @@ struct ExportView: View {
         }
     }
 
+    private var companyBinding: Binding<String> {
+        Binding(
+            get: { store.drawings.first(where: { $0.id == drawingID })?.company ?? "" },
+            set: { v in
+                if let di = store.drawings.firstIndex(where: { $0.id == drawingID }) {
+                    store.drawings[di].company = v
+                    store.save()
+                }
+            }
+        )
+    }
+
     /// v3.8: 保存したフォルダ(DXF/会社/素材/板厚)を「ファイル」アプリで開く
     private func openInFiles(_ folder: String) {
         let dir = Exporter.dxfRoot.deletingLastPathComponent().appendingPathComponent(folder, isDirectory: true)
@@ -131,11 +137,7 @@ struct ExportView: View {
         }
     }
 
-    private var company: String? { store.drawings.first { $0.id == drawingID }?.company }
-    private var hasCompany: Bool { Exporter.companyFolder(company) != "会社名未確定" }
-
     private func make() {
-        guard hasCompany else { return }
         guard let d = store.drawings.first(where: { $0.id == drawingID }) else { return }
         let items = d.parts.filter { $0.process == .laser && $0.include }.map { Exporter.Item(drawing: d, part: $0) }
         let r = Exporter.exportFiles(items: items, settings: store.settings)
@@ -143,34 +145,4 @@ struct ExportView: View {
         skipped = r.skipped
         made = true
     }
-}
-
-
-struct CompanyField: View {
-    @Environment(AppStore.self) private var store
-    let drawingID: UUID
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("社名（DXFの保存先）").font(.subheadline.bold())
-            TextField("社名を入力", text: companyBinding)
-                .textFieldStyle(.roundedBorder)
-                .submitLabel(.done)
-                .accessibilityLabel("社名")
-        }
-    }
-
-    private var companyBinding: Binding<String> {
-        Binding(
-            get: { store.drawings.first(where: { $0.id == drawingID })?.company ?? "" },
-            set: { v in
-                if let di = store.drawings.firstIndex(where: { $0.id == drawingID }) {
-                    store.drawings[di].company = v
-                    store.drawings[di].companyEdited = true
-                    store.save()
-                }
-            }
-        )
-    }
-
 }
