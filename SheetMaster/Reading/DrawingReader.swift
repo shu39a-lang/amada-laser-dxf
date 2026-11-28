@@ -78,7 +78,7 @@ struct DrawingReader {
             前回の回答では、組立品の面のつなぎ方(assembly)と部品一覧(parts)に次の食い違いがありました:
             \(probs.map { "・" + $0 }.joined(separator: "\n"))
             【作り方を決める手順】に従って、面のつなぎ方と部品の分け方を決め直してください。
-            溶接にする理由(板厚・材質が違う/溶接記号・溶接線がある/定尺を超える/展開すると重なる)がはっきりしていれば、溶接のままでかまいません。その場合は joins の reason にその理由を書いてください。
+            溶接にする理由(板厚・材質が違う/溶接記号・溶接線がある/定尺を超える/展開すると重なる/共有する辺が一直線でない)がはっきりしていれば、溶接のままでかまいません。その場合は joins の reason にその理由を書いてください。
             """
             if let inv2 = try? await inventory(prepared, hints: hintText, retryNote: note, onProgress: { _ in }) {
                 var rec2 = base
@@ -418,6 +418,8 @@ struct DrawingReader {
             bend.note = J.str(b["note"])
             bend.from = J.num(b["start"])
             bend.to = J.num(b["end"])
+            // v4.0: 図面に手書きされた、この曲げの控除値(例: 45°×2で「−0.8」→ 0.4)
+            if let d = J.num(b["deduction"]), d >= 0, d < 30 { bend.deduction = d }
             if let a = bend.from, let z = bend.to, a > z { bend.from = z; bend.to = a }
             return bend
         }
@@ -605,6 +607,7 @@ extension DrawingReader {
             f.start = J.num(x["start"])
             f.end = J.num(x["end"])
             f.corners = corners(x["corners"])
+            if let d = J.num(x["deduction"]), d >= 0, d < 30 { f.deduction = d }   // v4.0
             return f
         }
         var feats: [FaceFeature] = []

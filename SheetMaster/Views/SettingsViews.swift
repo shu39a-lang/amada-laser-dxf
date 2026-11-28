@@ -69,6 +69,10 @@ struct DeductionTableView: View {
                                 NumField(label: "V", value: $row.vWidth)
                                 NumField(label: "控除", value: $row.value90)
                                     .onChange(of: row.value90) { _, _ in $row.provisional.wrappedValue = false }
+                                // v4.0: 45°曲げの控除値(空欄・0なら理論式で計算)
+                                NumField(label: "45°", value: Binding(
+                                    get: { row.value45 ?? 0 },
+                                    set: { $row.value45.wrappedValue = $0 > 0 ? $0 : nil }))
                                 if row.provisional { Text("仮").font(.caption2).foregroundStyle(.orange) }
                             }
                         }
@@ -84,7 +88,7 @@ struct DeductionTableView: View {
                 }
                 Button("初期値に戻す", role: .destructive) { store.settings.deductions = AppSettings.defaultDeductions }
             } footer: {
-                Text("90°曲げ1回あたりの控除値(mm)。展開長 = 外寸の合計 − 控除値×曲げ回数。")
+                Text("控除 = 90°曲げ1回あたりの控除値(mm)。展開長 = 外寸の合計 − 控除値×曲げ回数。\n45° = 45°曲げ1回あたりの控除値(わかれば。例: SUS t1.5 で 0.4)。0のままなら90°の値から理論式で計算します。図面に手書きの控除(「−0.8」など)があれば、そちらを優先します。")
             }
         }
         .smScreen() // v3.9: アマダの赤の背景

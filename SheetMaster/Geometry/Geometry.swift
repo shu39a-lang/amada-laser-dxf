@@ -66,7 +66,7 @@ enum Geometry {
             }
             if row.provisional { out.warnings.append("控除値が仮値です(\(row.materialGroup) t\(Fmt.num(t)) = \(Fmt.num(row.value90))mm)。設定で会社の表に直してください") }
             var w: [String] = []
-            let r = PlateBuilder.flatten(pm, thickness: t, deduction90: row.value90, warnings: &w)
+            let r = PlateBuilder.flatten(pm, thickness: t, deduction90: row.value90, value45: row.value45, warnings: &w)
             out.warnings += w
             f.outline = r.outline
             f.holes = r.holes
@@ -86,7 +86,7 @@ enum Geometry {
             }
             if row.provisional { out.warnings.append("控除値が仮値です(\(row.materialGroup) t\(Fmt.num(t)) = \(Fmt.num(row.value90))mm)。設定で会社の表に直してください") }
             var w: [String] = []
-            let r = FaceBuilder.flatten(fm, thickness: t, deduction90: row.value90, warnings: &w)
+            let r = FaceBuilder.flatten(fm, thickness: t, deduction90: row.value90, value45: row.value45, warnings: &w)
             out.warnings += w
             for k in f.keyDimensions {
                 let actual: Double? = k.axis == "x" ? r.outerW : (k.axis == "y" ? r.outerH : nil)
@@ -126,7 +126,7 @@ enum Geometry {
             if let t = part.thickness {
                 if let row = settings.deduction(material: part.material, thickness: t) {
                     if row.provisional { out.warnings.append("控除値が仮値です(\(row.materialGroup) t\(Fmt.num(t)) = \(Fmt.num(row.value90))mm)。設定で会社の表に直してください") }
-                    f = unfold(f, deduction90: row.value90, warnings: &out.warnings)
+                    f = unfold(f, deduction90: row.value90, thickness: t, value45: row.value45, warnings: &out.warnings)
                 } else {
                     out.blocking.append("控除表に \(materialGroup(part.material)) t\(Fmt.num(t)) がありません(設定で追加してください)")
                 }
@@ -244,15 +244,47 @@ enum Geometry {
         return pts
     }
 
+    // MARK: - v4.0 曲げ角度ごとの控除値
+
+    /// 曲げ1回あたりの控除値(外寸の合計から引く値)。
+    ///  v3.9までは「90°の値 × 角度/90」の比例計算で、45°曲げの控除が大きすぎた
+    ///  (SUS t1.5: 比例だと1.4。現場の手書きは0.4前後)。
+    ///  - 90°はそのまま控除表の値
+    ///  - 45°で設定に45°の値があればそれを使う
+    ///  - それ以外は、90°の値から逆算した中立面の長さを使う理論式(内R = 板厚と仮定)
+    ///      控除 = 2(R+t)·tan(θ/2) − θ·N 、 N = (2(R+t) − 控除90) / (π/2)
+    static func bendDeduction(d90: Double, angle: Double, t: Double, d45: Double? = nil) -> Double {
+        let a = angle <= 0 ? 90 : angle
+        if abs(a - 90) <= 0.5 { return d90 }
+        if let v = d45, v > 0, abs(a - 45) <= 0.5 { return v }
+        guard t > 0, a < 179 else { return d90 * a / 90 }
+        let R = t
+        let n = (2 * (R + t) - d90) / (Double.pi / 2)
+        guard n > 0 else { return d90 * a / 90 }
+        let th = a * Double.pi / 180
+        let d = 2 * (R + t) * tan(th / 2) - th * n
+        return max(0, d)
+    }
+
+    /// 90°以外の曲げで、作業者に確かめてほしいこと(無ければ nil)
+    static func angleNote(angle: Double, d90: Double, t: Double, d45: Double?) -> String? {
+        let a = angle <= 0 ? 90 : angle
+        if abs(a - 90) <= 0.5 { return nil }
+        if let v = d45, v > 0, abs(a - 45) <= 0.5 { return nil }
+        let d = bendDeduction(d90: d90, angle: a, t: t, d45: d45)
+        return "\(Fmt.num(a))°曲げの控除は理論式で\(Fmt.num(d))mmにしています(要確認)。会社の45°の控除値を設定の控除表に入れると、その値を使います"
+    }
+
     // MARK: - 曲げ控除(外寸合算座標 → 展開座標)
 
-    static func unfold(_ f: FlatPattern, deduction90: Double, warnings: inout [String]) -> FlatPattern {
+    static func unfold(_ f: FlatPattern, deduction90: Double, thickness: Double = 0, value45: Double? = nil,
+                       warnings: inout [String]) -> FlatPattern {
         func ded(_ b: Bend) -> Double {
-            let a = b.angleDeg <= 0 ? 90 : b.angleDeg
-            return deduction90 * a / 90
+            if let d = b.deduction, d >= 0 { return d }
+            return bendDeduction(d90: deduction90, angle: b.angleDeg, t: thickness, d45: value45)
         }
-        for b in f.bends where b.angleDeg > 0 && abs(b.angleDeg - 90) > 0.5 {
-            warnings.append("\(Fmt.num(b.angleDeg))°曲げは90°の控除値から比例計算しています(要確認)")
+        for b in f.bends where b.deduction == nil {
+            if let msg = angleNote(angle: b.angleDeg, d90: deduction90, t: thickness, d45: value45) { warnings.append(msg) }
         }
         let xs = f.bends.filter { $0.axis == .x }.sorted { $0.position < $1.position }
         let ys = f.bends.filter { $0.axis == .y }.sorted { $0.position < $1.position }
@@ -572,7 +604,8 @@ enum FaceBuilder {
 
     struct Rect { var x0, y0, x1, y1: Double }
 
-    static func flatten(_ fm: FaceModel, thickness t: Double, deduction90: Double, warnings: inout [String]) -> Result {
+    static func flatten(_ fm: FaceModel, thickness t: Double, deduction90: Double, value45: Double? = nil,
+                        warnings: inout [String]) -> Result {
         var res = Result()
         let W = fm.width, H = fm.height
         guard W > 0, H > 0 else { warnings.append("基準面の寸法がありません"); return res }
@@ -581,8 +614,8 @@ enum FaceBuilder {
         for f in fm.flanges { byID[f.id] = f }
 
         func ded(_ f: FaceFlange) -> Double {
-            let a = f.angleDeg <= 0 ? 90 : f.angleDeg
-            return deduction90 * a / 90
+            if let d = f.deduction, d >= 0 { return d }
+            return Geometry.bendDeduction(d90: deduction90, angle: f.angleDeg, t: t, d45: value45)
         }
         func len(_ f: FaceFlange) -> Double { f.length + (f.lengthInner ? t : 0) }
         /// 基準面から f までのフランジの列
@@ -602,8 +635,10 @@ enum FaceBuilder {
         for f in fm.flanges where f.parent != "base" && byID[f.parent] == nil {
             warnings.append("フランジ\(f.id)の親「\(f.parent)」が見つかりません")
         }
-        for f in fm.flanges where f.angleDeg > 0 && abs(f.angleDeg - 90) > 0.5 {
-            warnings.append("\(f.name.isEmpty ? f.id : f.name): \(Fmt.num(f.angleDeg))°曲げは90°の控除値から比例計算しています(要確認)")
+        for f in fm.flanges where f.deduction == nil {
+            if let msg = Geometry.angleNote(angle: f.angleDeg, d90: deduction90, t: t, d45: value45) {
+                warnings.append("\(f.name.isEmpty ? f.id : f.name): " + msg)
+            }
         }
 
         let fb = firstOn("bottom"), ft = firstOn("top"), fl = firstOn("left"), fr = firstOn("right")
@@ -1023,7 +1058,8 @@ enum PlateBuilder {
         }
     }
 
-    static func flatten(_ pm0: PlateModel, thickness t: Double, deduction90: Double, warnings: inout [String]) -> Result {
+    static func flatten(_ pm0: PlateModel, thickness t: Double, deduction90: Double, value45: Double? = nil,
+                        warnings: inout [String]) -> Result {
         var res = Result()
         let pm = normalized(pm0)
         let pts = pm.outline
@@ -1042,7 +1078,7 @@ enum PlateBuilder {
             warnings.append("辺\(i + 1)の側壁(長さ\(Fmt.num(Geometry.dist(pts[i], pts[(i + 1) % n]))))は内角で隣の側壁と重なるため、別部品(溶接)にしました")
         }
 
-        func ded(_ w: PlateWall) -> Double { deduction90 * (w.angleDeg <= 0 ? 90 : w.angleDeg) / 90 }
+        func ded(_ w: PlateWall) -> Double { Geometry.bendDeduction(d90: deduction90, angle: w.angleDeg, t: t, d45: value45) }
         func horizontal(_ i: Int) -> Bool { abs(pts[i].y - pts[(i + 1) % n].y) < 0.01 }
         func dir(_ i: Int) -> P2 { Geometry.norm(Geometry.sub(pts[(i + 1) % n], pts[i])) }
         func inward(_ i: Int) -> P2 { let u = dir(i); return P2(x: -u.y, y: u.x) }

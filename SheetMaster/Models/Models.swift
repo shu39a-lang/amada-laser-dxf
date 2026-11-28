@@ -107,8 +107,10 @@ struct Bend: Codable, Hashable, Identifiable {
     /// 曲げ線の範囲(縦線ならY、横線ならXの始点・終点)。nil なら板の端から端まで
     var from: Double? = nil
     var to: Double? = nil
+    /// v4.0: この曲げだけの控除値(図面の手書き「−0.8」など)。nil なら控除表から計算
+    var deduction: Double? = nil
 
-    enum CodingKeys: String, CodingKey { case axis, position, angleDeg, up, note, from, to }
+    enum CodingKeys: String, CodingKey { case axis, position, angleDeg, up, note, from, to, deduction }
 }
 
 struct KeyDimension: Codable, Hashable, Identifiable {
@@ -160,6 +162,8 @@ struct FaceFlange: Codable, Hashable, Identifiable {
     var start: Double? = nil
     var end: Double? = nil
     var corners: [FaceCorner] = []
+    /// v4.0: この曲げだけの控除値(図面の手書きなど)。nil なら控除表から計算
+    var deduction: Double? = nil
 }
 
 /// 面の上の穴・切欠き
@@ -328,6 +332,8 @@ struct DeductionRow: Codable, Hashable, Identifiable {
     /// 90°曲げ1回あたりの控除値(mm)
     var value90: Double
     var provisional: Bool = true
+    /// v4.0: 45°曲げ1回あたりの控除値(mm)。nil なら90°の値から理論式で計算
+    var value45: Double? = nil
 }
 
 struct TapDrillRow: Codable, Hashable, Identifiable {
@@ -337,7 +343,7 @@ struct TapDrillRow: Codable, Hashable, Identifiable {
 }
 
 enum AppInfo {
-    static let version = "3.9"
+    static let version = "4.0"
 }
 
 enum Fmt {
