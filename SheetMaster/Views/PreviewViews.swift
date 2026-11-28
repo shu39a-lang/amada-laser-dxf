@@ -228,6 +228,9 @@ struct PhotoAlignment {
     var residual: [Int: Double] = [:]
     /// 合わせに使った穴の数(手動は0)
     var used: Int = 0
+    /// v4.0: 別の図(側面図・平面図など)に描かれていた穴と、その図のずれ(写真のピクセル)。
+    ///  第三角法では同じ縮尺・同じ向きで並ぶので、図ごとの平行移動だけで合わせ直して比べる
+    var otherView: [Int: CGPoint] = [:]
     var manual: Bool = false
 
     /// 写真のピクセル → mm
@@ -251,6 +254,13 @@ struct PhotoAlignment {
     func photoPixel(_ l: HoleLabel) -> CGPoint? {
         guard !manual, l.photoNo == photoNo, let p = l.photo else { return nil }
         return CGPoint(x: p.x * Double(image.size.width), y: p.y * Double(image.size.height))
+    }
+
+    /// v4.0: 重ねて描く位置(別の図の穴は、その図のずれを戻してデータの近くに出す)
+    func photoPixel(_ l: HoleLabel, index i: Int) -> CGPoint? {
+        guard let p = photoPixel(l) else { return nil }
+        guard let o = otherView[i] else { return p }
+        return CGPoint(x: p.x - o.x, y: p.y - o.y)
     }
 
     /// 保存用: [写真番号, ar, ai, br, bi, 写真の幅(ピクセル)]
@@ -322,8 +332,38 @@ struct PhotoAlignment {
             let pi = ar * z[j].1 + ai * z[j].0 + bi
             res[idx[j]] = hypot(pr - w[j].0, pi - w[j].1) / k
         }
+        // v4.0: 合わなかった穴を、図(ビュー)ごとのまとまりに分けて比べ直す。
+        //  例: 正面図の穴で合わせたあと、フランジのM3が側面図に描かれていて全部「ずれ約170mm」と出ていた。
+        //  第三角法の図は同じ縮尺・同じ向きなので、同じ図の穴は「ずれの向きと大きさ」がほぼそろう
+        let size = max(built.width, built.height)
+        let limit = max(5, size * 0.02)
+        let groupTol = max(20, size * 0.15)
+        var other: [Int: CGPoint] = [:]
+        var rest = (0..<z.count).filter { (res[idx[$0]] ?? 0) > limit }
+        func offset(_ j: Int) -> (Double, Double) {
+            let pr = ar * z[j].0 - ai * z[j].1 + br
+            let pi = ar * z[j].1 + ai * z[j].0 + bi
+            return (w[j].0 - pr, w[j].1 - pi)
+        }
+        while rest.count >= 2 {
+            var bestGroup: [Int] = []
+            for j in rest {
+                let oj = offset(j)
+                let g = rest.filter { hypot(offset($0).0 - oj.0, offset($0).1 - oj.1) / k <= groupTol }
+                if g.count > bestGroup.count { bestGroup = g }
+            }
+            guard bestGroup.count >= 2 else { break }
+            let ox = bestGroup.map { offset($0).0 }.reduce(0, +) / Double(bestGroup.count)
+            let oy = bestGroup.map { offset($0).1 }.reduce(0, +) / Double(bestGroup.count)
+            for j in bestGroup {
+                let o = offset(j)
+                res[idx[j]] = hypot(o.0 - ox, o.1 - oy) / k
+                other[idx[j]] = CGPoint(x: ox, y: oy)
+            }
+            rest.removeAll { bestGroup.contains($0) }
+        }
         return PhotoAlignment(image: img, photoNo: no, ar: ar, ai: ai, br: br, bi: bi,
-                              residual: res, used: r.inliers, manual: false)
+                              residual: res, used: r.inliers, manual: false, otherView: other)
     }
 
     /// v4.0: 外れた穴に引っぱられない合わせ方。
@@ -490,7 +530,7 @@ struct ComparePane: View {
                     if kind != .data, let al = align {
                         // 自動合わせは写真上の位置、手動合わせはデータと同じ位置に四角を出す
                         let c: CGPoint
-                        if let px = al.photoPixel(l) { c = m.pt(al.toMM(px)) } else if al.manual { c = m.pt(l.pos) } else { continue }
+                        if let px = al.photoPixel(l, index: i) { c = m.pt(al.toMM(px)) } else if al.manual { c = m.pt(l.pos) } else { continue }
                         let r = CGRect(x: c.x - bw / 2, y: c.y - bh / 2, width: bw, height: bh)
                         let style = kind == .overlay ? StrokeStyle(lineWidth: lw, dash: [4, 3]) : StrokeStyle(lineWidth: lw)
                         ctx.stroke(Path(r), with: .color(color), style: style)
@@ -906,11 +946,11 @@ struct CompareView: View {
         }
         let bad = al.residual.values.filter { $0 > limit }.count
         var t = "穴\(al.used)か所の位置で、写真の縮尺・傾きをデータに合わせています(写真\(al.photoNo))"
-        if al.used >= 3 && bad > 0 {
-            t += "。ずれの大きい穴が\(bad)か所あります"
-            // v4.0: フランジの穴は側面図など別のビューに描かれているので、写真の位置が合わないことがある
-            t += "(フランジの穴など、別のビューに描かれた穴は合わないことがあります。合わせには使っていません)"
+        // v4.0: フランジの穴など、側面図・平面図に描かれた穴は、その図の位置で比べている
+        if !al.otherView.isEmpty {
+            t += "。フランジの穴など別の図に描かれた\(al.otherView.count)か所は、その図の位置で比べています"
         }
+        if al.used >= 3 && bad > 0 { t += "。ずれの大きい穴が\(bad)か所あります" }
         return t
     }
 
@@ -950,6 +990,13 @@ struct CompareView: View {
         } else if let al = align, let r = al.residual[i] {
             if al.used < 3 {
                 Text("位置合わせに使用").foregroundStyle(.secondary)
+            } else if al.otherView[i] != nil {
+                // v4.0: 側面図など別の図に描かれた穴
+                if r > limit {
+                    Text("⚠︎ 別の図とずれ約\(Fmt.num((r * 10).rounded() / 10))mm").foregroundStyle(.orange)
+                } else {
+                    Text("別の図と一致").foregroundStyle(.green)
+                }
             } else if r > limit {
                 Text("⚠︎ ずれ約\(Fmt.num((r * 10).rounded() / 10))mm").foregroundStyle(.orange)
             } else {
