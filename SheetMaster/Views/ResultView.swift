@@ -31,6 +31,7 @@ struct ResultView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     StepHeader(number: 2, title: "形を確かめる")
+                    CompanyField(drawingID: drawingID)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(d.title.isEmpty ? "(品名なし)" : d.title).font(.title3.bold())
                         Text("図番 \(d.drawingNumber)" + (d.productNumber.isEmpty ? "" : "  製番 \(d.productNumber)"))
@@ -483,6 +484,7 @@ struct InventoryReviewView: View {
             Form {
                 Section {
                     StepHeader(number: 2, title: "部品を確かめる")
+                    CompanyField(drawingID: drawingID)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(d.title.isEmpty ? "(品名なし)" : d.title).font(.headline)
                         Text("図番 \(d.drawingNumber)").font(.caption).foregroundStyle(.secondary)

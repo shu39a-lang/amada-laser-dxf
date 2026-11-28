@@ -315,6 +315,7 @@ struct DrawingRecord: Codable, Hashable, Identifiable {
     var rawInventory: String? = nil
     /// v3.5: 図面を出した会社(表題欄の会社名)。DXFの保存フォルダ名に使う
     var company: String? = nil
+    var companyEdited: Bool? = nil
     /// v3.6: true = 部品一覧を確かめている途中(まだ展開を読んでいない)。nil / false = 展開まで済み
     var reviewPending: Bool? = nil
     /// v3.6: 読み取りの前に作業者が入れた前提(例:「部品は8種類。板厚違いは1種類」)
