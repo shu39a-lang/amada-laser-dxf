@@ -38,6 +38,27 @@ struct ResultView: View {
                         Text(laser.count <= 1 ? "この図面の板は1種類です" : "この図面には\(laser.count)種類の板があります(部品1〜\(laser.count))")
                             .font(.subheadline.bold()).foregroundStyle(.white).padding(.top, 4)
                     }
+                    // v4.0: 会社名(DXFの保存フォルダの分類)。読み取れなければここで入力する
+                    CompanyField(drawingID: drawingID, onRed: true)
+
+                    // v4.0: 確認の進み具合と、加工済みの印
+                    let incl = laser.filter { $0.include }
+                    let ok = incl.filter { $0.isConfirmed }.count
+                    HStack {
+                        Text("確認済み \(ok) / \(incl.count)")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(ok == incl.count && !incl.isEmpty ? Color.green : Color.yellow)
+                        Spacer()
+                        Button {
+                            toggleProcessed()
+                        } label: {
+                            Label(d.processed == true ? "加工済み" : "加工済みにする",
+                                  systemImage: d.processed == true ? "checkmark.seal.fill" : "seal")
+                                .font(.subheadline.bold())
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(d.processed == true ? .green : .white)
+                    }
 
                     if !d.questions.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -60,6 +81,8 @@ struct ResultView: View {
                                  onZoom: { zooming = PartRef(id: pair.element.id) },
                                  onCompare: { comparing = PartRef(id: pair.element.id) },
                                  onDelete: { deleting = PartRef(id: pair.element.id) })
+                        // v4.0: 部品ごとの「確認済み」(形・板厚・数量が変わると自動で外れる)
+                        ConfirmPartButton(confirmed: pair.element.isConfirmed) { toggleConfirm(pair.element.id) }
                     }
 
                     // v3.6: 読み取りが実物と大きく違うとき、形と寸法から部品を作る
@@ -487,6 +510,8 @@ struct InventoryReviewView: View {
                         Text(d.title.isEmpty ? "(品名なし)" : d.title).font(.headline)
                         Text("図番 \(d.drawingNumber)").font(.caption).foregroundStyle(.secondary)
                     }
+                    // v4.0: 会社名(DXFの保存フォルダの分類)。読み取れなければここで入力する
+                    CompanyField(drawingID: drawingID)
                     Text("展開を読む前に、部品の分け方を確かめてください。いらない部品は削除、足りない部品は「形から部品を作る」、1枚の板を曲げて作る部品は2つ以上選んで「まとめる」を押します。")
                         .font(.footnote)
                 }
@@ -830,5 +855,102 @@ struct ReviewPartRow: View {
             .buttonStyle(.bordered)
         }
         .padding(.vertical, 4)
+    }
+}
+
+
+/// v4.0: 会社名の表示と入力。
+///  DXFは「DXF → 会社 → 素材 → 板厚」のフォルダに分けて保存するので、会社名が空だと
+///  「会社名未確定」のフォルダに入ってしまう。②の画面で見えるようにし、読み取れなかったときは入力をうながす
+struct CompanyField: View {
+    @Environment(AppStore.self) private var store
+    let drawingID: UUID
+    /// 赤い背景の上に置くとき true(注意の文字を黄色にする)
+    var onRed: Bool = false
+
+    private var binding: Binding<String> {
+        Binding(
+            get: { store.drawings.first(where: { $0.id == drawingID })?.company ?? "" },
+            set: { v in
+                if let di = store.drawings.firstIndex(where: { $0.id == drawingID }) {
+                    store.drawings[di].company = v
+                    store.save()
+                }
+            }
+        )
+    }
+
+    var body: some View {
+        let empty = binding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("会社名").font(.subheadline.bold())
+                TextField("例: 日新電子工業", text: binding)
+                    .textFieldStyle(.roundedBorder)
+                    .foregroundStyle(Color.black)
+            }
+            if empty {
+                Text("図面から会社名を読み取れませんでした。入力しないと、DXFは「会社名未確定」のフォルダに保存されます")
+                    .font(.caption)
+                    .foregroundStyle(onRed ? Color.yellow : Color.orange)
+            } else {
+                Text("DXFは「DXF → \(Exporter.companyFolder(binding.wrappedValue)) → 素材 → 板厚」のフォルダに保存されます")
+                    .font(.caption)
+                    .foregroundStyle(onRed ? Color.white.opacity(0.8) : Color.secondary)
+            }
+        }
+    }
+}
+
+
+/// v4.0: 部品の「確認済み」ボタン
+struct ConfirmPartButton: View {
+    let confirmed: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: confirmed ? "checkmark.square.fill" : "square")
+                    .font(.title3)
+                Text(confirmed ? "確認済み(図面と見比べた)" : "図面と見比べたら、ここを押して確認済みにする")
+                    .font(.subheadline.bold())
+                Spacer()
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.bordered)
+        .tint(confirmed ? .green : .yellow)
+    }
+}
+
+extension ResultView {
+    /// v4.0: 確認済みの印を付ける/外す
+    func toggleConfirm(_ id: UUID) {
+        guard let a = store.drawings.firstIndex(where: { $0.id == drawingID }),
+              let b = store.drawings[a].parts.firstIndex(where: { $0.id == id }) else { return }
+        var p = store.drawings[a].parts[b]
+        if p.isConfirmed {
+            p.confirmed = nil
+            p.confirmedFlat = nil
+            p.confirmedThickness = nil
+            p.confirmedQuantity = nil
+        } else {
+            p.confirmed = true
+            p.confirmedFlat = p.flat
+            p.confirmedThickness = p.thickness
+            p.confirmedQuantity = p.quantity
+        }
+        store.drawings[a].parts[b] = p
+        store.save()
+    }
+
+    /// v4.0: 加工済みの印を付ける/外す
+    func toggleProcessed() {
+        guard let a = store.drawings.firstIndex(where: { $0.id == drawingID }) else { return }
+        let on = store.drawings[a].processed != true
+        store.drawings[a].processed = on ? true : nil
+        store.drawings[a].processedAt = on ? Date() : nil
+        store.save()
     }
 }

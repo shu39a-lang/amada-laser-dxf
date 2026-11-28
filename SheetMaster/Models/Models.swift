@@ -286,6 +286,19 @@ struct Part: Codable, Hashable, Identifiable {
     /// v3.6: 「形から部品を作る」で作った部品の形の種類(ShapeKind の rawValue)。nil = 図面から読んだ部品
     ///  この部品は展開を読みに行かない(作業者が入れた寸法で展開済み)
     var shapeKind: String? = nil
+    /// v4.0: 作業者が「確認済み」にした印と、そのときの展開・板厚・数量。
+    ///  このあと形・板厚・数量が変わると、自動で未確認に戻る(isConfirmed が false になる)
+    var confirmed: Bool? = nil
+    var confirmedFlat: FlatPattern? = nil
+    var confirmedThickness: Double? = nil
+    var confirmedQuantity: Int? = nil
+
+    var isConfirmed: Bool {
+        confirmed == true && confirmedFlat == flat && confirmedThickness == thickness && confirmedQuantity == quantity
+    }
+
+    /// v4.0: 抜く枚数(勝手違いがあれば2倍)
+    var sheetCount: Int { quantity * (mirrorPair ? 2 : 1) }
 
     var groupKey: String {
         let mat = material.isEmpty ? "材質未確定" : material
@@ -295,7 +308,8 @@ struct Part: Codable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case partKey, name, material, thickness, thicknessSource, thicknessEvidence, process,
-             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include, addedBy, manualAlign, shapeKind
+             quantity, mirrorPair, bendsCount, viewsDescription, confidence, flat, readError, userHint, include, addedBy, manualAlign, shapeKind,
+             confirmed, confirmedFlat, confirmedThickness, confirmedQuantity
     }
 }
 
@@ -319,6 +333,9 @@ struct DrawingRecord: Codable, Hashable, Identifiable {
     var reviewPending: Bool? = nil
     /// v3.6: 読み取りの前に作業者が入れた前提(例:「部品は8種類。板厚違いは1種類」)
     var hints: String? = nil
+    /// v4.0: 加工済みの印と、その日時
+    var processed: Bool? = nil
+    var processedAt: Date? = nil
 }
 
 // MARK: - 設定テーブル

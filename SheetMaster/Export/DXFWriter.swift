@@ -73,6 +73,11 @@ enum Exporter {
         var id: String { key }
     }
 
+    /// v4.0: 抜く枚数の合計(勝手違いは2倍)
+    static func sheetCount(_ items: [Item]) -> Int {
+        items.reduce(0) { $0 + $1.part.sheetCount }
+    }
+
     static func groups(_ drawings: [DrawingRecord]) -> [ExportGroup] {
         var dict: [String: [Item]] = [:]
         for d in drawings {

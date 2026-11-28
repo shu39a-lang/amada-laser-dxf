@@ -116,26 +116,39 @@ struct HomeView: View {
                 if running { Text("まず部品を洗い出します(1〜2分)。次の画面で部品の分け方を確かめてから、展開を読みます。受信している文字数が増えていれば正常です。") }
             }
 
-            if !store.drawings.isEmpty {
-                Section("これまでの図面") {
-                    ForEach(store.drawings) { d in
-                        NavigationLink {
-                            ResultView(drawingID: d.id)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(d.title.isEmpty ? "(品名なし)" : d.title).font(.headline)
-                                Text("\(d.drawingNumber)  板 \(d.parts.filter { $0.process == .laser }.count)種類")
-                                    .font(.caption).foregroundStyle(.secondary)
-                                if d.reviewPending == true {
-                                    Text("部品の確認中(展開はまだ)").font(.caption2.bold()).foregroundStyle(.orange)
-                                }
-                            }
+            // v4.0: 材質・板厚ごとにまとめて出す/保存したDXFを見る
+            Section {
+                NavigationLink {
+                    BatchExportView()
+                } label: {
+                    Label("材質・板厚ごとにまとめて出す", systemImage: "square.stack.3d.up")
+                }
+                NavigationLink {
+                    SavedDXFListView()
+                } label: {
+                    Label("保存したDXFを見る", systemImage: "doc.viewfinder")
+                }
+            }
+
+            // v4.0: 未加工と加工済みに分けて表示。右へスワイプ(行の左端から)で加工済みの印を付ける/外す
+            let pending = store.drawings.filter { $0.processed != true }
+            let done = store.drawings.filter { $0.processed == true }
+            if !pending.isEmpty {
+                Section("これまでの図面(未加工)") {
+                    ForEach(pending) { d in drawingRow(d) }
+                        .onDelete { idx in
+                            let targets = idx.map { pending[$0] }
+                            for d in targets { store.delete(d) }
                         }
-                    }
-                    .onDelete { idx in
-                        let targets = idx.map { store.drawings[$0] }
-                        for d in targets { store.delete(d) }
-                    }
+                }
+            }
+            if !done.isEmpty {
+                Section("加工済み") {
+                    ForEach(done) { d in drawingRow(d) }
+                        .onDelete { idx in
+                            let targets = idx.map { done[$0] }
+                            for d in targets { store.delete(d) }
+                        }
                 }
             }
         }
@@ -178,6 +191,48 @@ struct HomeView: View {
         .navigationDestination(item: $openID) { id in
             ResultView(drawingID: id)
         }
+    }
+
+    // MARK: v4.0 これまでの図面の1行(加工済みの印つき)
+
+    @ViewBuilder
+    private func drawingRow(_ d: DrawingRecord) -> some View {
+        NavigationLink {
+            ResultView(drawingID: d.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(d.title.isEmpty ? "(品名なし)" : d.title).font(.headline)
+                Text("\(d.drawingNumber)  板 \(d.parts.filter { $0.process == .laser }.count)種類" + (d.productNumber.isEmpty ? "" : "  製番 \(d.productNumber)"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if d.reviewPending == true {
+                    Text("部品の確認中(展開はまだ)").font(.caption2.bold()).foregroundStyle(.orange)
+                }
+                if d.processed == true {
+                    Text("加工済み" + (d.processedAt.map { " " + Self.dayText($0) } ?? ""))
+                        .font(.caption2.bold()).foregroundStyle(.green)
+                }
+            }
+        }
+        .swipeActions(edge: .leading) {
+            Button {
+                if let i = store.drawings.firstIndex(where: { $0.id == d.id }) {
+                    let on = store.drawings[i].processed != true
+                    store.drawings[i].processed = on ? true : nil
+                    store.drawings[i].processedAt = on ? Date() : nil
+                    store.save()
+                }
+            } label: {
+                Label(d.processed == true ? "未加工に戻す" : "加工済み", systemImage: "checkmark.seal")
+            }
+            .tint(.green)
+        }
+    }
+
+    private static func dayText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ja_JP")
+        f.dateFormat = "M/d"
+        return f.string(from: date)
     }
 
     // MARK: v3.9 今月の読み取り枚数
@@ -293,8 +348,11 @@ struct HelpView: View {
             "「読み取る」を押す。まず部品を洗い出す(1〜2分)",
             "② 部品を確かめる: いらない部品は削除、足りない部品は「形から部品を作る」、1枚の板を曲げて作る部品は2つ以上選んで「1枚にまとめる」。説明の【作り方】(曲げ・溶接)も確かめる",
             "「この部品で展開を読む」を押す",
+            "② 形を確かめる で「図面と見比べる」をしたら、部品の下の「確認済み」を押す。形・板厚・数量を直すと自動で外れる。確認済みでない部品があると③で注意が出る",
             "② 形を確かめる: 部品ごとに形と穴の位置を見る。「図面と見比べる」で写真と並べて確かめる。違っていれば「数値を直す」か「指示して読み直す」",
             "③「DXFファイルを作る」: この画面を開いた時点で、iPhoneに自動で保存される(「ファイル」アプリ → このiPhone内 → SHEET MASTER → DXF → 会社 → 素材 → 板厚)。フォルダ名をタップするとそのフォルダが開く",
+            "何枚かの図面をまとめて送るとき: 最初の画面の「材質・板厚ごとにまとめて出す」→ 材質・板厚を選ぶ → 部品を選んで「DXFを作って送る」。合計枚数も出る",
+            "加工が終わった図面は、② の画面の「加工済みにする」か、最初の画面の一覧で行を右へスワイプして印を付ける。一覧が「未加工」と「加工済み」に分かれる",
         ]),
         Topic(title: "注意点", icon: "exclamationmark.triangle", items: [
             "AIの読み取りには推定が入る。黄色・オレンジの「推定」「要確認」の所は、必ず図面と見比べる",
