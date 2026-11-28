@@ -25,7 +25,12 @@ root = pathlib.Path(output)
 (root / "team").write_text(team)
 (root / "profile").write_text(uuid)
 PY
-xcodebuild -project SheetMaster.xcodeproj -scheme SheetMaster -configuration Release -destination 'generic/platform=iOS' -archivePath "$build_root/SheetMaster.xcarchive" SHEET_MASTER_BUILD_NUMBER="${PROJECT_BUILD_NUMBER:?}" SHEET_MASTER_SIGNING_TEAM="$(cat "$build_root/team")" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" PROVISIONING_PROFILE_SPECIFIER="$(cat "$build_root/profile")" archive
+# v4.0: 失敗したときに、最初のエラー行をログの最後にまとめて出す(Codemagicの結果から原因が分かるように)
+if ! xcodebuild -project SheetMaster.xcodeproj -scheme SheetMaster -configuration Release -destination 'generic/platform=iOS' -archivePath "$build_root/SheetMaster.xcarchive" SHEET_MASTER_BUILD_NUMBER="${PROJECT_BUILD_NUMBER:?}" SHEET_MASTER_SIGNING_TEAM="$(cat "$build_root/team")" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" PROVISIONING_PROFILE_SPECIFIER="$(cat "$build_root/profile")" archive 2>&1 | tee "$build_root/xcodebuild.log"; then
+  echo "===== xcodebuild のエラー(最初の40件) ====="
+  grep -E "error:|ARCHIVE FAILED|The following build commands failed" "$build_root/xcodebuild.log" | head -40 || true
+  exit 65
+fi
 archived_app="$build_root/SheetMaster.xcarchive/Products/Applications/SheetMaster.app/Info.plist"
 test "$(plutil -extract CFBundleShortVersionString raw "$archived_app")" = "4.0"
 test "$(plutil -extract CFBundleIdentifier raw "$archived_app")" = "$bundle_id"

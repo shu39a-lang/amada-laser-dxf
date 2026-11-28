@@ -294,7 +294,10 @@ struct Part: Codable, Hashable, Identifiable {
     var confirmedQuantity: Int? = nil
 
     var isConfirmed: Bool {
-        confirmed == true && confirmedFlat == flat && confirmedThickness == thickness && confirmedQuantity == quantity
+        guard confirmed == true else { return false }
+        guard confirmedFlat == flat else { return false }
+        guard confirmedThickness == thickness else { return false }
+        return confirmedQuantity == quantity
     }
 
     /// v4.0: 抜く枚数(勝手違いがあれば2倍)

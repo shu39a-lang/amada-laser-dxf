@@ -363,7 +363,7 @@ struct PhotoAlignment {
             rest.removeAll { bestGroup.contains($0) }
         }
         return PhotoAlignment(image: img, photoNo: no, ar: ar, ai: ai, br: br, bi: bi,
-                              residual: res, used: r.inliers, manual: false, otherView: other)
+                              residual: res, used: r.inliers, otherView: other, manual: false)
     }
 
     /// v4.0: 外れた穴に引っぱられない合わせ方。

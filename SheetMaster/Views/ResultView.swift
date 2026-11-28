@@ -57,7 +57,7 @@ struct ResultView: View {
                                 .font(.subheadline.bold())
                         }
                         .buttonStyle(.bordered)
-                        .tint(d.processed == true ? .green : .white)
+                        .tint(d.processed == true ? Color.green : Color.white)
                     }
 
                     if !d.questions.isEmpty {
@@ -920,7 +920,7 @@ struct ConfirmPartButton: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.bordered)
-        .tint(confirmed ? .green : .yellow)
+        .tint(confirmed ? Color.green : Color.yellow)
     }
 }
 
