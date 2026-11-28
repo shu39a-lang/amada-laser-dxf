@@ -118,6 +118,7 @@ struct PartEditSheet: View {
                         }
                     }
                 }
+                .smScreen() // v3.9: アマダの赤の背景
                 .navigationTitle(part.name)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -213,6 +214,7 @@ struct RereadSheet: View {
                     if let e = errorText { Text(e).foregroundStyle(.red).font(.footnote) }
                 }
             }
+            .smScreen() // v3.9: アマダの赤の背景
             .navigationTitle("指示して読み直す")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { dismiss() }.disabled(running) } }
@@ -418,6 +420,7 @@ struct AddPartSheet: View {
                     if let e = errorText { Text(e).foregroundStyle(.red).font(.footnote) }
                 }
             }
+            .smScreen() // v3.9: アマダの赤の背景
             .navigationTitle("板を追加して読む")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("閉じる") { dismiss() }.disabled(running) } }
@@ -649,6 +652,7 @@ struct ShapePartSheet: View {
                 }
             }
             .onChange(of: kind) { _, k in values = k.fields.map { $0.value } }
+            .smScreen() // v3.9: アマダの赤の背景
             .navigationTitle("形から部品を作る")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

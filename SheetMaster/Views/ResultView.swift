@@ -34,9 +34,9 @@ struct ResultView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(d.title.isEmpty ? "(品名なし)" : d.title).font(.title3.bold())
                         Text("図番 \(d.drawingNumber)" + (d.productNumber.isEmpty ? "" : "  製番 \(d.productNumber)"))
-                            .font(.footnote).foregroundStyle(.secondary)
+                            .font(.footnote).foregroundStyle(.white.opacity(0.8))
                         Text(laser.count <= 1 ? "この図面の板は1種類です" : "この図面には\(laser.count)種類の板があります(部品1〜\(laser.count))")
-                            .font(.subheadline).foregroundStyle(.yellow).padding(.top, 4)
+                            .font(.subheadline.bold()).foregroundStyle(.white).padding(.top, 4)
                     }
 
                     if !d.questions.isEmpty {
@@ -119,6 +119,7 @@ struct ResultView: View {
                 }
                 .padding()
             }
+            .smScreen() // v3.9: アマダの赤の背景
             .navigationTitle("読み取り結果")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
@@ -134,7 +135,7 @@ struct ResultView: View {
                     .padding(.vertical, 10)
                 }
                 .buttonStyle(.borderedProminent)
-                .foregroundStyle(.black)
+                .foregroundStyle(Theme.red)
                 .disabled(laser.isEmpty)
                 .padding(.horizontal)
                 .padding(.bottom, 6)
@@ -246,7 +247,7 @@ struct PartCard: View {
         let built = Geometry.build(part: part, settings: settings)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("部品\(number)").font(.title2.bold()).foregroundStyle(.yellow)
+                Text("部品\(number)").font(.title2.bold()).foregroundStyle(Theme.redText)
                 Text(part.name).font(.headline).lineLimit(2)
                 Spacer()
                 // v3.6: いらない部品を消す
@@ -290,7 +291,7 @@ struct PartCard: View {
                         .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
-                .foregroundStyle(.black)
+                .foregroundStyle(Theme.red)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("形を読み取れませんでした").font(.headline).foregroundStyle(.red)
@@ -589,6 +590,7 @@ struct InventoryReviewView: View {
                 }
                 .listRowBackground(Color.clear)
             }
+            .smScreen() // v3.9: アマダの赤の背景
             .navigationTitle("部品を確かめる")
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
@@ -606,7 +608,7 @@ struct InventoryReviewView: View {
                     .padding(.vertical, 10)
                 }
                 .buttonStyle(.borderedProminent)
-                .foregroundStyle(.black)
+                .foregroundStyle(Theme.red)
                 .disabled(laser.isEmpty && !running)
                 .padding(.horizontal)
                 .padding(.bottom, 6)
@@ -629,6 +631,7 @@ struct InventoryReviewView: View {
                             Text("例: 「側板・天板・側板を1枚の細長い板でコの字に曲げる」。材質・板厚・数量は最初に選んだ部品と同じになります(あとで直せます)。")
                         }
                     }
+                    .smScreen() // v3.9: アマダの赤の背景
                     .navigationTitle("1枚にまとめる")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -655,6 +658,7 @@ struct InventoryReviewView: View {
                             Text("部品一覧をAIに読み直させます。今の一覧(直した所も)は置き換わります。「形から作った部品」は残ります。")
                         }
                     }
+                    .smScreen() // v3.9: アマダの赤の背景
                     .navigationTitle("部品一覧を読み直す")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -775,7 +779,7 @@ struct ReviewPartRow: View {
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(selected ? "選択を外す" : "選ぶ")
-                Text("部品\(number)").font(.headline).foregroundStyle(.yellow)
+                Text("部品\(number)").font(.headline).foregroundStyle(Theme.redText)
                 TextField("名前", text: $part.name).font(.headline)
             }
             if let k = part.shapeKind, let sk = ShapeKind(rawValue: k) {

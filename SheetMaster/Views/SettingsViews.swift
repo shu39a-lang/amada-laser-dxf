@@ -46,6 +46,7 @@ struct SettingsView: View {
                 LabeledContent("バージョン", value: AppInfo.version)
             }
         }
+        .smScreen() // v3.9: アマダの赤の背景
         .navigationTitle("設定")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("閉じる") { dismiss() } } }
@@ -86,6 +87,7 @@ struct DeductionTableView: View {
                 Text("90°曲げ1回あたりの控除値(mm)。展開長 = 外寸の合計 − 控除値×曲げ回数。")
             }
         }
+        .smScreen() // v3.9: アマダの赤の背景
         .navigationTitle("曲げ控除表")
     }
 }
@@ -105,6 +107,7 @@ struct TapTableView: View {
             .onDelete { store.settings.tapDrills.remove(atOffsets: $0) }
             Button("行を追加") { store.settings.tapDrills.append(TapDrillRow(size: "M", drill: 0)) }
         }
+        .smScreen() // v3.9: アマダの赤の背景
         .navigationTitle("タップ下穴表")
     }
 }
@@ -123,6 +126,7 @@ struct TransferGuideView: View {
                     .font(.footnote)
             }
         }
+        .smScreen() // v3.9: アマダの赤の背景
         .navigationTitle("送り方")
     }
 }

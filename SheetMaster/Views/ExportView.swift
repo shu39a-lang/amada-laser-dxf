@@ -80,7 +80,7 @@ struct ExportView: View {
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Theme.red)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
                 } footer: {
@@ -98,6 +98,7 @@ struct ExportView: View {
                 NavigationLink("会社のパソコンへの送り方") { TransferGuideView() }
             }
         }
+        .smScreen() // v3.9: アマダの赤の背景
         .navigationTitle("DXFファイル")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: make)

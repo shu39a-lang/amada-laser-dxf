@@ -158,7 +158,7 @@ struct FullPreviewView: View {
                             .padding(.vertical, 4)
                     }
                     .buttonStyle(.borderedProminent)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(Theme.red)
                     .padding(.horizontal)
                 }
             }
@@ -813,7 +813,7 @@ struct CompareView: View {
                     } label: {
                         Label("写真をタップして合わせる", systemImage: "hand.tap").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent).foregroundStyle(.black).padding(.horizontal)
+                    .buttonStyle(.borderedProminent).foregroundStyle(Theme.red).padding(.horizontal)
                 }
             }
         }
