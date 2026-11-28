@@ -32,7 +32,12 @@ struct PartEditSheet: View {
                     }
                     Section("板") {
                         TextField("名前", text: binding.name)
-                        TextField("材質(例: SUS304)", text: binding.material)
+                        // v4.0: 材質が空なら赤(必須)
+                        HStack {
+                            TextField("材質(例: SUS304)", text: binding.material)
+                            AttentionTag(level: part.material.isEmpty ? .required : .ok)
+                        }
+                        .attention(part.material.isEmpty ? .required : .ok)
                         HStack {
                             Text("板厚 t")
                             ThicknessField(part: binding)
@@ -102,6 +107,7 @@ struct PartEditSheet: View {
                                     }
                                     .font(.caption)
                                 }
+                                .attention(v.check != nil ? .check : .ok)   // v4.0: 推定した頂点はオレンジ
                             }
                             .onDelete { flat.wrappedValue.outline.remove(atOffsets: $0) }
                         }
@@ -174,6 +180,7 @@ struct HoleEditor: View {
                 }
             }
         }
+        .attention(hole.check != nil ? .check : .ok)   // v4.0: 推定した穴はオレンジ
     }
 }
 
@@ -530,6 +537,7 @@ struct PlateEditor: View {
                         Text("要確認: " + c).font(.caption2).foregroundStyle(.orange)
                     }
                 }
+                .attention(plate.wallHoles[i].hole.check != nil ? .check : .ok)   // v4.0
             }
             .onDelete { plate.wallHoles.remove(atOffsets: $0) }
         } header: {

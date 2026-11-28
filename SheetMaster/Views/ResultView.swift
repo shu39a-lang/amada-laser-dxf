@@ -59,6 +59,8 @@ struct ResultView: View {
                         .buttonStyle(.bordered)
                         .tint(d.processed == true ? Color.green : Color.white)
                     }
+                    // v4.0: 色の意味
+                    AttentionLegend()
 
                     if !d.questions.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -328,17 +330,37 @@ struct PartCard: View {
             }
 
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
+                // v4.0: 必須が空なら赤、推定ならオレンジの背景
                 GridRow {
                     Text("材質").foregroundStyle(.secondary)
-                    Text(part.material.isEmpty ? "未確定" : part.material)
+                    if part.material.isEmpty {
+                        HStack(spacing: 6) {
+                            AttentionTag(level: .required)
+                            Text("未入力 →「数値を直す」で入力").foregroundStyle(Color.white)
+                        }
+                        .attention(.required)
+                    } else {
+                        Text(part.material)
+                    }
                 }
                 GridRow {
                     Text("板厚").foregroundStyle(.secondary)
                     if let t = part.thickness {
-                        Text("t\(Fmt.num(t))" + (part.thicknessSource == "inferred" ? "(推定)" : ""))
-                            .foregroundStyle(part.thicknessSource == "inferred" ? Color.yellow : Color.primary)
+                        if part.thicknessSource == "inferred" {
+                            HStack(spacing: 6) {
+                                AttentionTag(level: .check)
+                                Text("t\(Fmt.num(t))(推定)")
+                            }
+                            .attention(.check)
+                        } else {
+                            Text("t\(Fmt.num(t))")
+                        }
                     } else {
-                        Text("未確定(入力してください)").foregroundStyle(.yellow)
+                        HStack(spacing: 6) {
+                            AttentionTag(level: .required)
+                            Text("未入力 →「数値を直す」で入力").foregroundStyle(Color.white)
+                        }
+                        .attention(.required)
                     }
                 }
                 GridRow {
@@ -365,17 +387,33 @@ struct PartCard: View {
                         .font(.caption.bold()).foregroundStyle(.orange)
                     ForEach(built.checkMarks.map(\.note).uniqued(), id: \.self) { Text("・" + $0).font(.caption) }
                 }
-                .padding(10)
+                .padding(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.orange, lineWidth: 1))
+                .attention(.check)   // v4.0: オレンジの背景
             }
 
-            let checks = built.blocking + built.warnings
-            if !checks.isEmpty && !built.outline.isEmpty {
+            // v4.0: DXFを作れない理由は赤、確かめてほしいことはオレンジの背景
+            if !built.blocking.isEmpty && !built.outline.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("確かめてほしいこと").font(.caption.bold()).foregroundStyle(.yellow)
-                    ForEach(checks, id: \.self) { Text("・" + $0).font(.caption) }
+                    HStack(spacing: 6) {
+                        AttentionTag(level: .required)
+                        Text("このままではDXFを作れません").font(.caption.bold()).foregroundStyle(Color.white)
+                    }
+                    ForEach(built.blocking, id: \.self) { Text("・" + $0).font(.caption).foregroundStyle(Color.white) }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .attention(.required)
+            }
+            if !built.warnings.isEmpty && !built.outline.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        AttentionTag(level: .check)
+                        Text("確かめてほしいこと").font(.caption.bold())
+                    }
+                    ForEach(built.warnings, id: \.self) { Text("・" + $0).font(.caption) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .attention(.check)
             }
 
             HStack(spacing: 10) {
@@ -512,6 +550,7 @@ struct InventoryReviewView: View {
                     }
                     // v4.0: 会社名(DXFの保存フォルダの分類)。読み取れなければここで入力する
                     CompanyField(drawingID: drawingID)
+                    AttentionLegend()
                     Text("展開を読む前に、部品の分け方を確かめてください。いらない部品は削除、足りない部品は「形から部品を作る」、1枚の板を曲げて作る部品は2つ以上選んで「まとめる」を押します。")
                         .font(.footnote)
                 }
@@ -827,12 +866,14 @@ struct ReviewPartRow: View {
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(3)
             }
             HStack {
-                TextField("材質", text: $part.material)
+                // v4.0: 材質が空なら赤(必須)
+                TextField("材質(必須)", text: $part.material)
                     .textFieldStyle(.roundedBorder)
+                    .attention(part.material.isEmpty ? .required : .ok)
                 Text("t")
                 ThicknessField(part: $part)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 70)
+                    .frame(minWidth: 80, maxWidth: 140)
             }
             .font(.subheadline)
             Stepper("数量 \(part.quantity)枚", value: $part.quantity, in: 1...999)
@@ -888,7 +929,9 @@ struct CompanyField: View {
                 TextField("例: 日新電子工業", text: binding)
                     .textFieldStyle(.roundedBorder)
                     .foregroundStyle(Color.black)
+                AttentionTag(level: empty ? .check : .ok)
             }
+            .attention(empty ? .check : .ok)   // v4.0: 空なら オレンジ(DXFは作れるが「会社名未確定」に入る)
             if empty {
                 Text("図面から会社名を読み取れませんでした。入力しないと、DXFは「会社名未確定」のフォルダに保存されます")
                     .font(.caption)

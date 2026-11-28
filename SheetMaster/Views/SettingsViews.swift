@@ -157,17 +157,101 @@ struct ThicknessField: View {
     @State private var text = ""
 
     var body: some View {
-        TextField("未確定", text: $text)
-            .keyboardType(.decimalPad)
-            .multilineTextAlignment(.trailing)
-            .onAppear { text = part.thickness.map(Fmt.num) ?? "" }
-            .onChange(of: text) { _, t in
-                let v = Double(t.trimmingCharacters(in: .whitespaces))
-                if v != part.thickness {
-                    part.thickness = v
-                    part.thicknessSource = v == nil ? "unknown" : "user"
+        // v4.0: 板厚が無ければ赤(必須)、AIの推定ならオレンジ(要確認)
+        let level: Attention = part.thickness == nil ? .required : (part.thicknessSource == "inferred" ? .check : .ok)
+        HStack(spacing: 4) {
+            TextField("必須", text: $text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .onAppear { text = part.thickness.map(Fmt.num) ?? "" }
+                .onChange(of: text) { _, t in
+                    let v = Double(t.trimmingCharacters(in: .whitespaces))
+                    if v != part.thickness {
+                        part.thickness = v
+                        part.thicknessSource = v == nil ? "unknown" : "user"
+                    }
                 }
-            }
+            AttentionTag(level: level)
+        }
+        .attention(level)
+    }
+}
+
+// MARK: - v4.0 注意の色分け
+//  赤(必須)  : 入れないとDXFを作れない・正しく作れない所(板厚・材質など)
+//  オレンジ(要確認): AIの推定・図面に寸法が無かった所。図面と見比べて確かめる所
+//  どの画面でも同じ色・同じ札にして、ひと目で分かるようにする
+
+enum Attention {
+    case required
+    case check
+    case ok
+}
+
+/// 「必須」「要確認」の小さな札
+struct AttentionTag: View {
+    let level: Attention
+
+    var body: some View {
+        switch level {
+        case .required:
+            Text("必須")
+                .font(.caption2.bold())
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Capsule().fill(Color.red))
+                .overlay(Capsule().stroke(Color.white, lineWidth: 1))
+        case .check:
+            Text("要確認")
+                .font(.caption2.bold())
+                .foregroundStyle(Color.black)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(Capsule().fill(Color.orange))
+        case .ok:
+            EmptyView()
+        }
+    }
+}
+
+/// 背景の色分け(赤い画面の上でも見えるよう、白・オレンジの枠を付ける)
+struct AttentionBackground: ViewModifier {
+    let level: Attention
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        switch level {
+        case .required:
+            content
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.9)))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white, lineWidth: 2))
+        case .check:
+            content
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.35)))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.orange, lineWidth: 2))
+        case .ok:
+            content
+        }
+    }
+}
+
+extension View {
+    /// v4.0: 赤(必須)・オレンジ(要確認)の背景を付ける
+    func attention(_ level: Attention) -> some View {
+        modifier(AttentionBackground(level: level))
+    }
+}
+
+/// v4.0: 色の意味の説明(②の画面の上に出す)
+struct AttentionLegend: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            AttentionTag(level: .required)
+            Text("必ず入力").font(.caption)
+            AttentionTag(level: .check)
+            Text("推定・図面と確認").font(.caption)
+        }
     }
 }
 
