@@ -313,8 +313,8 @@ struct PhotoAlignment {
             z.append((l.pos.x, -l.pos.y))
             w.append((p.x * Double(img.size.width), p.y * Double(img.size.height)))
         }
-        guard let r = solve(z, w) else { return nil }
-        let (ar, ai, br, bi) = r
+        guard let r = robustSolve(z, w, partSize: max(built.width, built.height)) else { return nil }
+        let (ar, ai, br, bi) = r.fit
         let k = hypot(ar, ai)
         var res: [Int: Double] = [:]
         for j in 0..<z.count {
@@ -323,7 +323,51 @@ struct PhotoAlignment {
             res[idx[j]] = hypot(pr - w[j].0, pi - w[j].1) / k
         }
         return PhotoAlignment(image: img, photoNo: no, ar: ar, ai: ai, br: br, bi: bi,
-                              residual: res, used: z.count, manual: false)
+                              residual: res, used: r.inliers, manual: false)
+    }
+
+    /// v4.0: 外れた穴に引っぱられない合わせ方。
+    ///  v3.9までは全部の穴で最小二乗をしていたため、フランジの穴(側面図など別のビューに描かれた穴)が
+    ///  混ざると全体が数十mmずれ、正しい穴まで「ずれ約60〜70mm」と出ていた(例: 取り出し口フタ L-5012-00004-002)。
+    ///  2つの穴の組をすべて試し、ずれが許容内に収まる穴がいちばん多い合わせ方を選んで、その穴だけで合わせ直す
+    static func robustSolve(_ z: [(Double, Double)], _ w: [(Double, Double)],
+                            partSize: Double) -> (fit: (Double, Double, Double, Double), inliers: Int)? {
+        let n = z.count
+        guard n >= 2, n == w.count else { return nil }
+        if n == 2 {
+            guard let f = solve(z, w) else { return nil }
+            return (fit: f, inliers: 2)
+        }
+        let tol = max(3.0, partSize * 0.02)   // mm
+        func residuals(_ f: (Double, Double, Double, Double)) -> [Double] {
+            let k = hypot(f.0, f.1)
+            return (0..<n).map { j in
+                let pr = f.0 * z[j].0 - f.1 * z[j].1 + f.2
+                let pi = f.0 * z[j].1 + f.1 * z[j].0 + f.3
+                return hypot(pr - w[j].0, pi - w[j].1) / k
+            }
+        }
+        var best: [Int] = []
+        var bestErr = Double.infinity
+        for i in 0..<n {
+            for j in (i + 1)..<n {
+                // 近すぎる2点は縮尺・傾きが不安定なので使わない
+                guard hypot(z[i].0 - z[j].0, z[i].1 - z[j].1) > tol * 2,
+                      let f = solve([z[i], z[j]], [w[i], w[j]]) else { continue }
+                let r = residuals(f)
+                let ins = (0..<n).filter { r[$0] <= tol }
+                let err = ins.map { r[$0] }.reduce(0, +)
+                if ins.count > best.count || (ins.count == best.count && err < bestErr) {
+                    best = ins; bestErr = err
+                }
+            }
+        }
+        // 3か所以上が合う合わせ方が無ければ、今までどおり全部の穴で合わせる
+        guard best.count >= 3, let f = solve(best.map { z[$0] }, best.map { w[$0] }) else {
+            guard let all = solve(z, w) else { return nil }
+            return (fit: all, inliers: n)
+        }
+        return (fit: f, inliers: best.count)
     }
 }
 
@@ -862,7 +906,11 @@ struct CompareView: View {
         }
         let bad = al.residual.values.filter { $0 > limit }.count
         var t = "穴\(al.used)か所の位置で、写真の縮尺・傾きをデータに合わせています(写真\(al.photoNo))"
-        if al.used >= 3 && bad > 0 { t += "。ずれの大きい穴が\(bad)か所あります" }
+        if al.used >= 3 && bad > 0 {
+            t += "。ずれの大きい穴が\(bad)か所あります"
+            // v4.0: フランジの穴は側面図など別のビューに描かれているので、写真の位置が合わないことがある
+            t += "(フランジの穴など、別のビューに描かれた穴は合わないことがあります。合わせには使っていません)"
+        }
         return t
     }
 
